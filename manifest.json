@@ -1,0 +1,14 @@
+{
+  "name": "Bubble — Adelyn's App",
+  "short_name": "Bubble",
+  "description": "A friendly app for working with big feelings.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fdeffa",
+  "theme_color": "#8b3fb5",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
