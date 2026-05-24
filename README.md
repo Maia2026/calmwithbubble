@@ -3,7 +3,7 @@
 A deployable PWA built on the four Core Systems (sync, points, PIN parent zone,
 therapist reports) from the Blob Battle handoff. The anger-specific core loop
 is the reskin: four doors, before/after rating, Bubble buddy + anger monster,
-chip-based reflection, coping-tool bank.
+chip-based reflection, coping-tool bank. 
 
 ## Files
 - `index.html` — structure, registers the service worker
