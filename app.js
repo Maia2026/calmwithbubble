@@ -514,6 +514,8 @@ renderers.home = () => {
       <div><div class="dt">Something happened</div><div class="ds">Look back at an angry moment</div></div></button>
     <button class="door brave" onclick="go('bravePick')"><div class="emoji">🦁</div>
       <div><div class="dt">Be brave</div><div class="ds">Something feels scary</div></div></button>
+    <button class="door people" onclick="go('peopleStart')"><div class="emoji">🧩</div>
+      <div><div class="dt">People practice</div><div class="ds">Get better at reading people</div></div></button>
     <div class="minirow">
       <button class="minicard" onclick="go('progress')"><div class="mi">🏆</div><div class="ml">My Wins</div></button>
       <button class="minicard" onclick="go('closet')"><div class="mi">🎩</div><div class="ml">Closet</div></button>
@@ -747,11 +749,12 @@ renderers.detective = () => {
   <div class="pad fade"><span class="step-tag">THOUGHT DETECTIVE 🔍</span>
     <div class="step-title">Let's check that thought</div>
     <div class="card"><h3>Your thought:</h3><p>"${escapeHtml(th)}"</p></div>
-    <div class="card tip"><p>🕵️ <b>Do you KNOW that for sure?</b><br>Our brain sometimes guesses the worst. A detective looks for more clues.</p></div>
+    <div class="card tip"><p>🧩 Just like in <b>People Practice</b> — our brain made a fast guess. A detective looks for more clues before deciding.<br><br>🕵️ <b>Do you KNOW that for sure?</b></p></div>
     <div class="step-sub" style="margin-top:14px">Find a clue — could one of these also be true?</div>
     ${DETECTIVE.map(t=>`<button class="choice" onclick="pickOne(this)">
       <span class="ce">💡</span>${escapeHtml(t)}</button>`).join('')}
-    <button class="btn go" onclick="afterTool()">I found another idea ✅</button>
+    <div class="card" style="margin-top:12px"><p style="font-size:13.5px">💜 And if it really WAS unkind — that is okay to know too. Your feelings are right, and you can set a kind, strong boundary.</p></div>
+    <button class="btn go" onclick="afterTool()">I looked for clues ✅</button>
   </div>`;
 };
 renderers.express = () => {
@@ -839,6 +842,162 @@ renderers.braveDo = () => {
   </div>`;
 };
 
+/* =============================================================
+   PEOPLE PRACTICE — reading people generously, AND knowing
+   when something genuinely crossed a line. Practiced calm.
+   (Simple first version — for the therapist to shape.)
+============================================================= */
+
+/* Each scenario: a situation + the four "buckets" to sort it into.
+   correctIsh = the bucket(s) that fit best — but the app never scolds;
+   "actually unkind" is ALWAYS a valid, respected choice. */
+const PEOPLE_SCENES = [
+  { s:'Your friend laughed when you tripped, then said "you okay?" and helped you up.',
+    best:'joke', note:'They laughed, but they checked on you and helped — that points to a friendly, not mean, laugh.' },
+  { s:'Two friends were whispering and looked over at you.',
+    best:'unsure', note:'This one is genuinely hard to know! Whispering near you could be about anything. When you can\'t tell — you can ask, instead of guessing the worst.' },
+  { s:'You said hi and your friend walked past without answering.',
+    best:'busy', note:'They might not have heard you, or had a lot on their mind. People miss things — it usually is not about you.' },
+  { s:'A kid copied your drawing style and said "yours is so cool, I want to try it."',
+    best:'kind', note:'Copying can feel weird — but they told you WHY: they liked it. That is a compliment.' },
+  { s:'Someone bumped your tower and it fell, then said "oh no, sorry!"',
+    best:'accident', note:'It knocked down — but "sorry" and "oh no" tell you they did not mean to.' },
+  { s:'A friend said "that haircut is... interesting" and smirked.',
+    best:'unkind', note:'Sometimes it really IS unkind — and your feelings about that are right. This is one where speaking up makes sense.' },
+  { s:'Your friend picked someone else to be their partner today.',
+    best:'busy', note:'Being picked second stings. But one choice on one day usually is not a message about you — friends mix it up.' },
+  { s:'A classmate teased you about your shoes, you said "ha, yeah" — and they kept going after you went quiet.',
+    best:'unkind', note:'A friendly joke STOPS when it stops being fun for you. Kept going after you went quiet — that crossed a line.' },
+];
+const BUCKETS = [
+  { id:'joke',     e:'😄', label:'A friendly joke' },
+  { id:'accident', e:'🤷', label:'An accident' },
+  { id:'busy',     e:'🌀', label:'They were busy / didn\'t notice' },
+  { id:'kind',     e:'💛', label:'Actually something kind' },
+  { id:'unsure',   e:'🤔', label:'Hard to tell — I could ask' },
+  { id:'unkind',   e:'💔', label:'That was actually unkind' },
+];
+
+renderers.peopleStart = () => {
+  state.flow = { door:'people', round:0, score:0 };
+  screen.innerHTML=`${topbar('home')}
+  <div class="pad fade">
+    <span class="step-tag">PEOPLE PRACTICE 🧩</span>
+    <div class="step-title">Reading people — your superpower</div>
+    <div class="duo" style="margin:6px auto">${buddy('',104)}</div>
+    <div class="card"><p>When something happens with friends, our brain makes a fast <b>guess</b> about why. Sometimes the guess is "they were being mean" — but lots of times it is something else.</p></div>
+    <div class="card tip"><p>🧩 We will look at little moments and sort them. The trick: get good at telling a <b>real</b> unkind moment apart from a <b>misread</b> one. Both are real — this is about telling which is which.</p></div>
+    <div class="card"><p>💜 And "that was actually unkind" is always okay to pick. If it WAS unkind, your feelings are right — and we will practice what to do about it too.</p></div>
+    <button class="btn" onclick="peopleRound()">Start practicing 🧩</button>
+  </div>`;
+};
+
+function peopleRound(){
+  const f=state.flow;
+  if(f.round>=5){ peopleDone(); return; }
+  // pick a scene not yet used this session
+  if(!f.used) f.used=[];
+  let pool=PEOPLE_SCENES.map((_,i)=>i).filter(i=>!f.used.includes(i));
+  if(!pool.length){ pool=PEOPLE_SCENES.map((_,i)=>i); f.used=[]; }
+  const idx=pool[Math.floor(Math.random()*pool.length)];
+  f.used.push(idx); f.scene=idx;
+  const sc=PEOPLE_SCENES[idx];
+  screen.innerHTML=`${topbar(null)}
+  <div class="pad fade">
+    <span class="step-tag">SORT THIS MOMENT</span>
+    <div style="font-weight:800;color:var(--orchid);font-size:13px;margin-top:8px">Round ${f.round+1} of 5</div>
+    <div class="bar" style="margin-bottom:8px"><i style="width:${(f.round/5)*100}%"></i></div>
+    <div class="card"><h3 style="margin:0">What happened:</h3>
+      <p style="font-size:15.5px;color:var(--ink);margin-top:6px">${escapeHtml(sc.s)}</p></div>
+    <div class="step-sub" style="margin-top:12px">What is your best guess about why? Tap one.</div>
+    ${BUCKETS.map(b=>`<button class="choice" onclick="peoplePick('${b.id}')">
+      <span class="ce">${b.e}</span>${escapeHtml(b.label)}</button>`).join('')}
+  </div>`;
+}
+
+function peoplePick(bucketId){
+  const f=state.flow;
+  const sc=PEOPLE_SCENES[f.scene];
+  const pickedUnkind = bucketId==='unkind';
+  const sceneIsUnkind = sc.best==='unkind';
+  // we never say "wrong" — we affirm, then gently widen the view
+  let head, body, headColor;
+  if(bucketId===sc.best){
+    head='Great reading! 🧩'; headColor='var(--mint)';
+    body=sc.note;
+  } else if(pickedUnkind && !sceneIsUnkind){
+    head='That is okay to feel.'; headColor='var(--orchid)';
+    body='If it felt unkind, your feeling counts. Here is one other way to see it too: '+sc.note;
+  } else if(!pickedUnkind && sceneIsUnkind){
+    head='Good thinking — and notice this.'; headColor='var(--orchid)';
+    body='Looking for the kind reason is a great habit! This one, though, is worth a second look: '+sc.note;
+  } else {
+    head='Nice — here is another angle.'; headColor='var(--orchid)';
+    body=sc.note;
+  }
+  f.round++;
+  if(bucketId===sc.best) f.score++;
+  screen.innerHTML=`${topbar(null)}
+  <div class="pad fade">
+    <span class="step-tag">LET'S LOOK CLOSER</span>
+    <div class="step-title" style="color:${headColor}">${head}</div>
+    <div class="card"><p style="font-size:15px;color:var(--ink)">${escapeHtml(body)}</p></div>
+    ${sceneIsUnkind?`
+      <div class="card tip"><p>💪 When something really is unkind, you can set a <b>kind, strong boundary</b> — speak up without being mean back. Want to practice that?</p></div>
+      <button class="btn" onclick="go('boundaryPractice')">Practice speaking up 💪</button>
+      <button class="btn ghost" onclick="peopleRound()">Next moment ›</button>`
+    : `<button class="btn" onclick="peopleRound()">Next moment ›</button>`}
+  </div>`;
+}
+
+/* boundary practice — kind + strong ways to speak up */
+const BOUNDARY_LINES = [
+  '"That one didn\'t feel good to me. Please stop."',
+  '"I know you\'re joking, but I don\'t like that joke."',
+  '"I need a minute — that hurt my feelings."',
+  '"Please don\'t talk about me like that."',
+  '"I want to keep being friends, and that wasn\'t kind."',
+];
+renderers.boundaryPractice = () => {
+  screen.innerHTML=`${topbar(null)}
+  <div class="pad fade">
+    <span class="step-tag">SPEAKING UP 💪</span>
+    <div class="step-title">Kind AND strong</div>
+    <div class="step-sub">A boundary is not being mean back. It is calmly saying what is okay and not okay. Tap one to practice saying it out loud:</div>
+    ${BOUNDARY_LINES.map(l=>`<button class="choice" onclick="pickOne(this)">
+      <span class="ce">💪</span>${escapeHtml(l)}</button>`).join('')}
+    <div class="card tip"><p>🌟 Strong does not mean loud or mean. A calm, clear voice is the strongest of all.</p></div>
+    <button class="btn go" onclick="peopleRound()">I practiced it ✅</button>
+  </div>`;
+};
+
+function peopleDone(){
+  const f=state.flow;
+  // People Practice earns points like a reflection-level effort
+  const session={mode:'reflect', thoughtful:f.score>=3};
+  const pts=awardPoints(session);
+  recordUsageDay();
+  state.log.unshift({
+    ts:Date.now(), door:'people',
+    title:'People practice', setoff:'', thought:'', tool:'Reading people',
+    rateBefore:null, rateAfter:null,
+    result:'sorted '+f.score+'/5 with kind thinking', pts,
+  });
+  save();
+  screen.innerHTML=`<div class="celebrate" id="celeb">
+    <div style="font-size:26px">🧩 🎉 🧩</div>
+    <h2>Practice done!</h2>
+    <div class="big">You practiced reading people in a kind, fair way — and remembering when to speak up.</div>
+    <div class="duo" style="margin:8px 0">${buddy('happy',100)}</div>
+    <div class="big" style="color:var(--mint)">You sorted ${f.score} of 5 with generous thinking 🧩</div>
+    <div class="pointpop">+${pts} ⭐</div>
+    <div class="big" style="margin-top:10px;font-size:13px">The more you practice, the easier it gets to tell a real problem from a misread one.</div>
+    <button class="btn" style="max-width:260px" onclick="go('home')">Back home</button>
+    <button class="btn ghost" style="max-width:260px" onclick="go('peopleStart')">Practice again 🧩</button>
+  </div>`;
+  burst();
+}
+
 /* ---------- FINISH FLOW — uses calcPoints/awardPoints ---------- */
 function finishFlow(){
   const mode = flow.door==='before'?'warning'
@@ -878,7 +1037,7 @@ renderers.celebrate = (d) => {
   const labels={before:'You caught a warning sign early!',during:'You used the app while angry!',
     after: d.entry.result&&/thought/i.test(d.entry.result)?'Thoughtful reflection! 🌟':'You looked back and reflected!',
     brave:'You took a brave step!'};
-  const emojis={before:'🌤️',during:'🔥',after:'📖',brave:'🦁'};
+  const emojis={before:'🌤️',during:'🔥',after:'📖',brave:'🦁',people:'🧩'};
   screen.innerHTML=`<div class="celebrate" id="celeb">
     <div style="font-size:26px">${emojis[e.door]} 🎉 ${emojis[e.door]}</div>
     <h2>Way to go!</h2><div class="big">${escapeHtml(labels[e.door]||'Great job!')}</div>
@@ -932,7 +1091,7 @@ renderers.progress = () => {
     ${state.log.length?state.log.slice(0,30).map(l=>{
       const sub=(l.tool?'Used: '+escapeHtml(l.tool)+' · ':'')
         +(l.rateBefore!=null&&l.rateAfter!=null?'Feeling '+l.rateBefore+' → '+l.rateAfter:escapeHtml(l.result||'logged'));
-      const emoji={before:'🌤️',during:'🔥',after:'📖',brave:'🦁'}[l.door]||'⭐';
+      const emoji={before:'🌤️',during:'🔥',after:'📖',brave:'🦁',people:'🧩'}[l.door]||'⭐';
       return `<div class="logitem"><span class="lemoji">${emoji}</span>
         <div style="flex:1"><div class="lt">${escapeHtml(l.title)}</div><div class="ls">${sub}</div></div>
         <span class="badge">+${l.pts}⭐</span></div>`;

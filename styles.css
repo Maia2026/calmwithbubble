@@ -287,3 +287,7 @@
     background:linear-gradient(135deg,#f3e3fb,#e9d4f7);
     box-shadow:0 5px 0 #d9b8ec; outline:2px solid var(--orchid);
   }
+
+  /* People Practice door */
+  .door.people{background:linear-gradient(135deg,#f0a93f,#e0852a); box-shadow:0 7px 0 #b56a1a;}
+  .door.people:active{box-shadow:0 2px 0 #b56a1a;}
