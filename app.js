@@ -40,6 +40,13 @@ function freshState(){
     log: [],
     owned: {},
     wearing: null,            // currently equipped accessory id
+    rewards: [               // parent-defined real-world rewards
+      { id:'r1', name:'15 min extra screen time', cost:20 },
+      { id:'r2', name:'Pick dinner',              cost:40 },
+      { id:'r3', name:'Special outing with Mom or Dad', cost:100 },
+    ],
+    pendingClaims: [],        // {claimId, rewardId, name, cost, ts} awaiting parent approval
+    earnedRewards: [],        // {rewardId, name, ts} for history
     customMantras: [],
     customVerses: [],
     parentNotes: [],
@@ -209,13 +216,24 @@ function buildReport(kind){
   const doorName = { before:'Caught warning sign', during:'Used app while angry',
                      after:'Reflected afterward', brave:'Brave step' };
   // counts
-  const byDoor = {}, byBucket = {}, byTool = {}, bySetoff = {};
-  let drops = 0, dropTotal = 0;
+  const byDoor = {}, byBucket = {}, byTool = {}, bySetoff = {}, byNextPlan = {};
+  let drops = 0, dropTotal = 0, reflectUsedYes = 0, reflectUsedNo = 0;
+  let multiToolMoments = 0, grownUpRequests = 0;
   for(const e of events){
     byDoor[e.door] = (byDoor[e.door]||0)+1;
     byBucket[timeBucket(e.ts)] = (byBucket[timeBucket(e.ts)]||0)+1;
-    if(e.tool) byTool[e.tool] = (byTool[e.tool]||0)+1;
+    if(e.tool){
+      // tool may be "A → B → C" (multiple tools used in one moment); count each
+      e.tool.split(/\s*→\s*/).filter(Boolean).forEach(t => {
+        byTool[t] = (byTool[t]||0)+1;
+      });
+    }
+    if(e.toolsCount && e.toolsCount > 1) multiToolMoments++;
+    if(e.gotGrownUp) grownUpRequests++;
     if(e.setoff) bySetoff[e.setoff] = (bySetoff[e.setoff]||0)+1;
+    if(e.nextTimeTool) byNextPlan[e.nextTimeTool] = (byNextPlan[e.nextTimeTool]||0)+1;
+    if(e.door==='after' && e.usedCoping===true) reflectUsedYes++;
+    if(e.door==='after' && e.usedCoping===false) reflectUsedNo++;
     if(e.rateBefore!=null && e.rateAfter!=null){
       drops++; dropTotal += (e.rateBefore - e.rateAfter);
     }
@@ -229,8 +247,29 @@ function buildReport(kind){
     return `<tr><td>${escapeHtml(when)}</td><td>${escapeHtml(doorName[e.door]||e.door)}</td>
       <td>${escapeHtml(e.setoff||e.title||'—')}</td>
       <td>${escapeHtml(e.thought||'—')}</td>
-      <td>${escapeHtml(e.tool||'—')}</td><td>${ba}</td></tr>`;
+      <td>${escapeHtml(e.tool||'—')}</td><td>${ba}</td>
+      <td>${escapeHtml(e.notes||'—')}</td></tr>`;
   }).join('');
+
+  // Adelyn's own notes, gathered for a dedicated section
+  const noteList = events.filter(e=>e.notes && e.notes.trim())
+    .map(e=>`<tr><td>${escapeHtml(new Date(e.ts).toLocaleString())}</td>
+      <td>${escapeHtml(e.setoff||e.title||'—')}</td>
+      <td>${escapeHtml(e.notes)}</td></tr>`).join('');
+
+  // Parent notes (added by you in the parent zone)
+  const parentNoteRows = [];
+  for(const e of events){
+    if(e.parentNotes && e.parentNotes.length){
+      for(const n of e.parentNotes){
+        parentNoteRows.push(`<tr>
+          <td>${escapeHtml(new Date(n.ts).toLocaleString())}</td>
+          <td>${escapeHtml(e.setoff||e.title||'—')}<div style="font-size:11px;color:#666">moment from ${escapeHtml(new Date(e.ts).toLocaleString())}</div></td>
+          <td>${escapeHtml(n.text)}</td></tr>`);
+      }
+    }
+  }
+  const parentNoteList = parentNoteRows.join('');
 
   const kv = obj => Object.entries(obj).sort((a,b)=>b[1]-a[1])
     .map(([k,v])=>`${escapeHtml(k)}: ${v}`).join(' · ') || '—';
@@ -263,13 +302,45 @@ function buildReport(kind){
 
     <h2>Coping tools used</h2>
     <p>${kv(byTool)}</p>
+    ${multiToolMoments?`<p>In <b>${multiToolMoments}</b> moment(s), Adelyn used more than one tool back-to-back — meaning she stuck with it when the first tool was not enough.</p>`:''}
+    ${grownUpRequests?`<p>In <b>${grownUpRequests}</b> moment(s), she chose to find a grown-up after multiple tools — a healthy choice to ask for human help.</p>`:''}
+
+    <h2>Coping tool use during reflection</h2>
+    <p>When looking back at a moment, Adelyn reported using a coping tool
+       <b>${reflectUsedYes}</b> time(s), and not using one <b>${reflectUsedNo}</b> time(s).
+       ${Object.keys(byNextPlan).length
+         ? 'When she had not used a tool, her next-time plans were — '+kv(byNextPlan)+'.'
+         : ''}</p>
 
     <h2>Time of day</h2>
     <p>${kv(byBucket)}</p>
 
+    <h2>Adelyn's own notes</h2>
+    ${noteList
+      ? `<table><tr><th>When</th><th>Trigger</th><th>What Adelyn wrote</th></tr>${noteList}</table>`
+      : '<p>No written notes in this period.</p>'}
+
+    <h2>Parent observations</h2>
+    <p style="font-size:12px;color:#666">Context added by parent in the parent zone. Hidden from Adelyn.</p>
+    ${parentNoteList
+      ? `<table><tr><th>When added</th><th>About moment</th><th>Parent wrote</th></tr>${parentNoteList}</table>`
+      : '<p>No parent notes in this period.</p>'}
+
+    <h2>Thoughtful "do-overs" she planned</h2>
+    <p style="font-size:12px;color:#666">After moments she labeled as impulsive (or partly so), Bubble prompted a gentle do-over — what the thoughtful version could have looked like next time.</p>
+    ${(()=>{
+      const doRows = events.filter(e=>e.doover && e.doover.trim()).map(e=>`<tr>
+        <td>${escapeHtml(new Date(e.ts).toLocaleString())}</td>
+        <td>${escapeHtml(e.setoff||e.title||'—')}</td>
+        <td>${escapeHtml(e.doover)}</td></tr>`).join('');
+      return doRows
+        ? `<table><tr><th>When</th><th>Moment</th><th>Her do-over plan</th></tr>${doRows}</table>`
+        : '<p>No do-overs in this period.</p>';
+    })()}
+
     <h2>Full moment log — with trigger thoughts in context</h2>
     <table><tr><th>When</th><th>What she did</th><th>Trigger</th>
-      <th>Thought</th><th>Tool</th><th>Feeling 0–10</th></tr>${rows||'<tr><td colspan="6">No moments in this period.</td></tr>'}</table>
+      <th>Thought</th><th>Tool</th><th>Feeling 0–10</th><th>Notes</th></tr>${rows||'<tr><td colspan="7">No moments in this period.</td></tr>'}</table>
 
     <p class="muted" style="margin-top:20px">This is home-tracked data entered by a child and parent.
        It is meant to support — not replace — clinical assessment. All values are self-reported
@@ -324,16 +395,37 @@ const $ = id => document.getElementById(id);
 const screen = $('screen');
 let currentView = 'home';
 let flow = {};   // per-session working data
+let navStack = []; // history of {view, data} for back button
 
-function go(view, data){
+function go(view, data, opts){
+  // push current onto stack unless this is a back-nav or going home (reset)
+  if(!opts || !opts.back){
+    if(view === 'home'){ navStack = []; }
+    else if(currentView && currentView !== view){
+      navStack.push({ view: currentView, data: lastData });
+      if(navStack.length > 50) navStack.shift(); // cap
+    }
+  }
   currentView = view;
+  lastData = data || {};
   renderers[view](data||{});
   screen.scrollTop = 0;
 }
+let lastData = {};
+function goBack(){
+  if(!navStack.length){ go('home'); return; }
+  const prev = navStack.pop();
+  go(prev.view, prev.data, {back:true});
+}
+
 function topbar(backTo){
+  // backTo can still be passed for an explicit target, but default uses goBack()
+  // We always show a back button except on home itself.
+  const showBack = currentView !== 'home';
   return `<div style="display:flex;align-items:center;gap:10px;padding:14px 18px 6px">
-    ${backTo?`<button class="back" onclick="go('${backTo}')">‹</button>`
-            :'<div style="width:42px"></div>'}
+    ${showBack
+      ? `<button class="back" onclick="${backTo?`go('${backTo}')`:'goBack()'}">‹</button>`
+      : '<div style="width:42px"></div>'}
     <div class="pointchip">⭐ ${state.points}</div></div>`;
 }
 
@@ -429,6 +521,10 @@ const TOOLS=[
      'Name every color you can find in the room 🌈','Picture your calm happy place 🏖️',
      'Blow slow pretend bubbles 🫧']},
   {id:'dragon',e:'🐉',name:'Dragon breath',kind:'breath',desc:'Big slow breaths to cool down.'},
+  {id:'water',e:'🧊',name:'Cold water',kind:'list',desc:'A cold sip resets your body fast.',
+   ideas:['Sip cold water slowly and feel it cool you down 🧊',
+     'Splash some cold water on your face 💦',
+     'Hold an ice cube or something cold in your hand ❄️']},
   {id:'mantra',e:'💜',name:'Say my mantra',kind:'mantra',desc:'Tell myself something strong.'},
   {id:'faith',e:'🙏',name:'Prayer or verse',kind:'faith',desc:'A calm prayer or a verse I love.'},
   {id:'detective',e:'🔍',name:'Be a thought detective',kind:'detective',desc:'Check if a worried thought is really true.'},
@@ -452,24 +548,37 @@ const FEARS=[{e:'🌙',t:'The dark / nighttime'},{e:'⛈️',t:'Thunderstorms'},
   {e:'🎢',t:'Roller coasters'},{e:'🐛',t:'Bugs'},{e:'🧍',t:'Being alone'}];
 const AFTER_Q=[
   {tag:'WHERE WERE YOU?',q:'Where did it happen?',type:'chips',
-   chips:['Home 🏠','School 🏫','In the car 🚗',"A friend's house 🏡",'Outside 🌳','At an activity ⚽','Somewhere else ✨']},
+   chips:['Home 🏠','My room 🛏️','School 🏫','In the car 🚗',"A friend's house 🏡",
+     'Outside 🌳','At an activity ⚽','At church ⛪','Grandma/Grandpa\'s 👵','A store 🛒',
+     'Somewhere else ✨']},
   {tag:'WHO WAS THERE?',q:'Who was with you?',type:'chips',
-   chips:['Mom 💗','Dad 💙','Emily 🧒','A neighborhood friend 🏘️','A school friend 🎒','A family member 👪','A teacher 🍎','Just me 🙂']},
+   chips:['Mom 💗','Dad 💙','Emily 🧒','A neighborhood friend 🏘️','A school friend 🎒',
+     'A group of friends 👯','A family member 👪','A teacher 🍎','A coach 📣','A grown-up I didn\'t know 👤',
+     'Just me 🙂']},
   {tag:'WHAT DID YOU DO?',q:'What did you do?',type:'chips',sub:'Just honest — no judging. Tap all that happened.',
-   chips:['Yelled 😣','Clenched my fists ✊','Made a mean face 😠','Stomped off 👣','Cried 😢',
-     'Said something mean 💢','Slammed a door 🚪','Threw something 🧸','Went quiet 🤐','Walked away 🚶']},
+   chips:['Yelled 😣','Screamed 😱','Clenched my fists ✊','Made a mean face 😠','Stomped off 👣',
+     'Cried 😢','Said something mean 💢','Talked back 🗯️','Slammed a door 🚪','Threw something 🧸',
+     'Hit something 👊','Pushed someone 🙅','Went quiet 🤐','Sulked 😒','Walked away 🚶',
+     'Asked for help 🙋','Used a calm-down tool 🧰']},
   {tag:'THOUGHTFUL OR IMPULSIVE?',q:'Was that thoughtful or impulsive?',type:'single',
    sub:'Did you stop and think, or did it happen fast?',chips:['Thoughtful 🧠','A bit of both 🤔','Impulsive ⚡']},
   {tag:'WHAT SET IT OFF?',q:'What made you angry?',type:'chips',sub:'Tap what started it.',
-   chips:['Someone said no 🚫','Felt left out 😕','Felt picked on 😠','Something felt unfair ⚖️',
-     "Didn't get my way 😤",'Someone took something 🤲','Plans changed 🔄','Too much going on 🌪️']},
+   chips:['Someone said no 🚫','Felt left out 😕','Felt picked on 😠','Felt teased 🙄',
+     'Something felt unfair ⚖️',"Didn't get my way 😤",'Someone took something 🤲',
+     'Plans changed 🔄','Too much going on 🌪️','Got told to do something 📋',
+     'Someone wouldn\'t share 🤐','Lost a game 🎲','Was rushed ⏰','Was tired or hungry 😴',
+     'Someone broke a rule 📏','Someone laughed at me 😞']},
   {tag:'WHAT HAPPENED NEXT?',q:'What happened because of that?',type:'chips',sub:'How did it turn out? Tap all that fit.',
-   chips:['Got in trouble ⚠️','Someone got upset 😟','We stopped playing 🛑','I felt bad after 💔',
-     'We worked it out 🤝','I calmed down 😮‍💨','Nothing really changed 😐']},
+   chips:['Got in trouble ⚠️','Someone got upset 😟','I lost a privilege 📵','We stopped playing 🛑',
+     'I felt bad after 💔','Got a hug 🤗','We worked it out 🤝','Someone said sorry 💬',
+     'I said sorry 🙇','I calmed down 😮‍💨','Nothing really changed 😐','It got worse 📈',
+     'I needed alone time 🛋️','A grown-up helped 🧑‍🤝‍🧑']},
   {tag:'DID YOU FEEL IT COMING?',q:'Did you feel it coming?',type:'single',
    sub:'Did you notice warning signs before it got big?',chips:['Yes, I felt it 👀','A little 🤏','No, it surprised me 💥']},
   {tag:'NEXT TIME',q:'What could you try next time?',type:'chips',sub:'Not to feel bad — just a plan. Tap any ideas.',
-   chips:['Take a breath 🐉','Walk away to cool off 🚶','Ask for help 🙋','Use a calm-down tool 🧰','Tell a grown-up 🗣️','Catch it earlier 🌤️']},
+   chips:['Take a breath 🐉','Walk away to cool off 🚶','Count to 10 🔢','Drink cold water 🧊',
+     'Move my body 🛼','Ask for help 🙋','Use a calm-down tool 🧰','Tell a grown-up 🗣️',
+     'Use my words 💬','Take a break ⏸️','Say my mantra 💜','Pray 🙏','Catch it earlier 🌤️']},
 ];
 function feelWord(v){
   if(v<=1)return['Calm','#3fd6a8']; if(v<=3)return['A little bugged','#7fce6a'];
@@ -518,6 +627,7 @@ renderers.home = () => {
       <div><div class="dt">People practice</div><div class="ds">Get better at reading people</div></div></button>
     <div class="minirow">
       <button class="minicard" onclick="go('progress')"><div class="mi">🏆</div><div class="ml">My Wins</div></button>
+      <button class="minicard" onclick="go('rewards')"><div class="mi">🎁</div><div class="ml">Rewards</div></button>
       <button class="minicard" onclick="go('closet')"><div class="mi">🎩</div><div class="ml">Closet</div></button>
       <button class="minicard" onclick="go('parentGate')"><div class="mi">🔒</div><div class="ml">Grown-Ups</div></button>
     </div>
@@ -563,7 +673,47 @@ function rateDone(when){
     if(flow.door==='brave') go('braveStep');
     else if(flow.door==='after') go('afterPrompts');
     else go('thought');
-  } else { flow.rateAfter=v; finishFlow(); }
+  } else {
+    flow.rateAfter=v;
+    // After second rating: for the DURING door, give her a calm choice
+    // (another tool / tell what happened / done). Other doors finish normally.
+    if(flow.door==='during') go('duringWhatNow');
+    else finishFlow();
+  }
+}
+
+/* ---------- DURING: after she's calmer, what does she want to do? ---------- */
+renderers.duringWhatNow = () => {
+  const calmer = (flow.rateBefore!=null && flow.rateAfter!=null && flow.rateAfter<flow.rateBefore);
+  screen.innerHTML=`${topbar(null)}
+  <div class="pad fade" style="text-align:center">
+    <span class="step-tag">YOU DID IT 🌟</span>
+    <div class="step-title">${calmer?'Nice — your feeling came down!':'You showed up — that is huge.'}</div>
+    <div class="duo" style="margin:8px auto">${buddy('happy',110)}</div>
+    <div class="card"><p>What would you like to do next? <b>Whatever you pick is okay.</b></p></div>
+    <button class="choice" onclick="duringAnotherTool()">
+      <span class="ce">🔁</span>Use another tool</button>
+    <button class="choice" onclick="duringLogIt()">
+      <span class="ce">📖</span>Tell what happened (log it)</button>
+    <button class="choice" onclick="duringDoneForNow()">
+      <span class="ce">✅</span>I'm done for now</button>
+    <div class="skipnote">If you choose "done", you can always come back later and log it. 💜</div>
+  </div>`;
+};
+function duringAnotherTool(){
+  // back to the picker; keep the toolsUsed history
+  flow.tool = null;
+  go('duringToolPick');
+}
+function duringLogIt(){
+  // jump into the reflection prompts; rating already captured at start (rateBefore)
+  flow.door = 'during';  // keep door label so the entry stays "during" with logging
+  flow.logging = true;
+  go('afterPrompts');    // chip-based prompts — she can fill them now that she's calmer
+}
+function duringDoneForNow(){
+  // finish without reflection — moment is logged with what we have
+  finishFlow();
 }
 
 /* ---------- BEFORE ---------- */
@@ -591,20 +741,70 @@ renderers.aloneTime = () => {
       .map(c=>`<button class="choice" onclick="go('rate',{when:'now'})"><span class="ce">✨</span>${c}</button>`).join('')}
   </div>`;
 };
-renderers.duringStart=()=>{ flow={door:'during'}; go('rate',{when:'now'}); };
+renderers.duringStart=()=>{
+  flow={door:'during'};
+  go('duringRate');
+};
+
+/* ---------- DURING: super-simple opening rating ---------- */
+renderers.duringRate = () => {
+  screen.innerHTML=`${topbar('home')}
+  <div class="pad fade" style="text-align:center">
+    <span class="step-tag" style="background:#ffd6c2;color:#c8530f">I'M HERE 🔥</span>
+    <div class="step-title" style="margin-top:10px">How big is it?</div>
+    <div class="duo" style="margin:8px auto">${buddy('',104)}</div>
+    <div class="meter-num" id="mnum" style="font-size:90px">5</div>
+    <input type="range" min="0" max="10" value="5" id="slider" oninput="updMeterSimple()" style="margin-top:10px">
+    <div class="scale-ends" style="margin-top:6px"><span>0 · calm</span><span>10 · huge</span></div>
+    <button class="btn" style="margin-top:18px" onclick="duringRateDone()">That's how big it is</button>
+  </div>`;
+  updMeterSimple();
+};
+function updMeterSimple(){
+  const v=+$('slider').value, [w,c]=feelWord(v);
+  $('mnum').textContent=v; $('mnum').style.color=c;
+}
+function duringRateDone(){
+  flow.rateBefore = +$('slider').value;
+  go('duringToolPick');
+}
+
+/* ---------- DURING: fast body-reset picker (3 huge options + auto) ---------- */
+renderers.duringToolPick = () => {
+  screen.innerHTML=`${topbar(null)}
+  <div class="pad fade" style="text-align:center">
+    <span class="step-tag" style="background:#ffd6c2;color:#c8530f">PICK FAST 🔥</span>
+    <div class="step-title" style="margin-top:8px">Let's get your body to calm down</div>
+    <div class="bigtool move" onclick="pickTool('move')">
+      <div class="bt-e">🛼</div><div class="bt-t">MOVE</div></div>
+    <div class="bigtool dragon" onclick="pickTool('dragon')">
+      <div class="bt-e">🐉</div><div class="bt-t">DRAGON BREATH</div></div>
+    <div class="bigtool water" onclick="pickTool('water')">
+      <div class="bt-e">🧊</div><div class="bt-t">COLD WATER</div></div>
+    <div class="bigtool helpme" onclick="bubbleTakeover()">
+      <div class="bt-e">💜</div><div class="bt-t">I CAN'T PICK — JUST HELP</div></div>
+    <button class="btn ghost" style="margin-top:12px" onclick="go('toolPick')">Show all my tools</button>
+  </div>`;
+};
+/* Bubble starts dragon breath automatically when she can't choose */
+function bubbleTakeover(){
+  flow.tool = TOOLS.find(t=>t.id==='dragon');
+  go('breathe',{next:'afterTool'});
+}
 renderers.afterStart =()=>{ flow={door:'after'};  go('rate',{when:'then'}); };
 
 /* ---------- THOUGHT ---------- */
 renderers.thought = () => {
+  const mn = escapeHtml(state.monsterName || 'the anger monster');
   screen.innerHTML=`${topbar(null)}
-  <div class="pad fade"><span class="step-tag">NAME THE THOUGHT</span>
-    <div class="step-title">What is your brain telling you?</div>
-    <div class="step-sub">Naming the thought helps us look at it. Tap the closest one.</div>
+  <div class="pad fade"><span class="step-tag">WHAT IS ${mn.toUpperCase()} SAYING?</span>
+    <div class="step-title">What is ${mn} telling you?</div>
+    <div class="step-sub">When you're angry, ${mn} whispers pushy thoughts. Naming them helps us look at them. Tap the closest one.</div>
     ${THOUGHTS.map((t,i)=>`<button class="choice" onclick="pickThought(this,${i})">
       <span class="ce">💭</span>${escapeHtml(t)}</button>`).join('')}
     <button class="moretoggle" onclick="showThoughtBox()" id="moreBtn">+ say it in my own words</button>
     <div id="morebox" style="display:none">
-      <textarea id="ownthought" placeholder="Type the thought in your own words..."></textarea></div>
+      <textarea id="ownthought" placeholder="Type what ${mn} is telling you..."></textarea></div>
     <button class="btn" onclick="thoughtNext()">Next</button>
     <div class="skipnote">Pick the closest one — it doesn't have to be perfect. 💜</div>
   </div>`;
@@ -622,8 +822,28 @@ function thoughtNext(){
   const box=$('ownthought'); const own=box?box.value.trim():'';
   if(own) flow.thought=own;
   if(!flow.thought) flow.thought='(a hard thought)';
+  go('notes');
+}
+
+/* ---------- NOTES — optional "tell us more" after the thought ---------- */
+renderers.notes = () => {
+  screen.innerHTML=`${topbar(null)}
+  <div class="pad fade"><span class="step-tag">TELL ME MORE 📝</span>
+    <div class="step-title">Anything else you want to share?</div>
+    <div class="step-sub">You can write a little about what's happening — or skip it. Totally up to you.</div>
+    <div class="duo" style="margin:4px auto">${buddy('',92)}</div>
+    <div class="card tip"><p>💜 Writing it down can help — and it helps the grown-ups who care about you understand. But only if you want to.</p></div>
+    <textarea id="notebox" placeholder="What's going on? You can tell me as much or as little as you want..." style="min-height:120px"></textarea>
+    <button class="btn" onclick="notesNext()">Next</button>
+    <button class="btn ghost" onclick="notesSkip()">Skip for now</button>
+  </div>`;
+};
+function notesNext(){
+  const box=$('notebox');
+  flow.notes = box ? box.value.trim() : '';
   go('toolPick');
 }
+function notesSkip(){ flow.notes=''; go('toolPick'); }
 
 /* ---------- TOOL PICK ---------- */
 renderers.toolPick = () => {
@@ -632,7 +852,7 @@ renderers.toolPick = () => {
   screen.innerHTML=`${topbar(null)}
   <div class="pad fade"><span class="step-tag">PICK A TOOL</span>
     <div class="step-title">What will help right now?</div>
-    <div class="step-sub">${targeted?'That thought sounds like a worry — "thought detective" could really help. Movement is great too!':'These all work. Moving your body is a great one for you!'}</div>
+    <div class="step-sub">${targeted?'That sounds like '+escapeHtml(state.monsterName||'the anger monster')+' guessing the worst — "thought detective" could really help. Movement is great too!':'These all work. Moving your body is a great one for you!'}</div>
     ${TOOLS.map(t=>`<button class="choice ${targeted&&t.id==='detective'?'sel':''}" onclick="pickTool('${t.id}')">
       <span class="ce">${t.e}</span><span style="flex:1">${escapeHtml(t.name)}
       <div style="font-size:12px;color:${targeted&&t.id==='detective'?'#fff':'var(--ink-soft)'};font-weight:600">${escapeHtml(t.desc)}</div>
@@ -676,7 +896,49 @@ renderers.toolList = (d) => {
     if(tp) tp.style.strokeDashoffset = circ*(1-remain/total);
   },()=>{ const b=$('donebtn'); if(b) b.textContent='All done! Tap here ✅'; });
 };
-function afterTool(){ Timer.stop(); go('rate',{when:'after'}); }
+function afterTool(){
+  Timer.stop();
+  // record which tool was just used in this session
+  if(!flow.toolsUsed) flow.toolsUsed = [];
+  if(flow.tool) flow.toolsUsed.push(flow.tool.name);
+  go('moreHelp');
+}
+
+/* ---------- "I feel better" vs "I need more help" ---------- */
+renderers.moreHelp = () => {
+  const tried = flow.toolsUsed ? flow.toolsUsed.length : 0;
+  const suggestGrownUp = tried >= 3;
+  screen.innerHTML=`${topbar(null)}
+  <div class="pad fade">
+    <span class="step-tag">HOW ARE YOU?</span>
+    <div class="step-title">How are you feeling now?</div>
+    <div class="step-sub">${tried>1
+      ? `You've tried ${tried} tools so far — that's hard work!`
+      : 'You used a tool — nice job!'}</div>
+    <div class="duo" style="margin:8px auto">${buddy('',96)}</div>
+    <button class="choice" onclick="go('rate',{when:'after'})">
+      <span class="ce">😌</span>I feel better — let's check it</button>
+    <button class="choice" onclick="moreTool()">
+      <span class="ce">🔁</span>I need more help — try another tool</button>
+    ${suggestGrownUp?`
+      <div class="card tip" style="margin-top:14px">
+        <h3 style="margin:0">💜 You're working so hard.</h3>
+        <p>Big feelings sometimes need a grown-up, not just a tool. Would you like to find someone who can be with you?</p>
+        <button class="btn" style="margin-top:8px" onclick="grownUpSuggested()">Yes — I'll find a grown-up 🤗</button>
+      </div>`:''}
+    <div class="skipnote">Whatever you pick is okay. There's no wrong answer. 💜</div>
+  </div>`;
+};
+function moreTool(){
+  // back to the picker — but skip the warning/thought steps since she's mid-session
+  flow.tool = null;          // ready to pick a new one
+  go('toolPick');
+}
+function grownUpSuggested(){
+  // log the moment as a "got grown-up help" outcome and finish
+  flow.gotGrownUp = true;
+  go('rate',{when:'after'});
+}
 
 /* ---------- dragon breath ---------- */
 renderers.breathe = (d) => {
@@ -745,11 +1007,12 @@ function saveVerseMaybe(){
 }
 renderers.detective = () => {
   const th=flow.thought||'that thought';
+  const mn=escapeHtml(state.monsterName || 'the anger monster');
   screen.innerHTML=`${topbar(null)}
   <div class="pad fade"><span class="step-tag">THOUGHT DETECTIVE 🔍</span>
-    <div class="step-title">Let's check that thought</div>
-    <div class="card"><h3>Your thought:</h3><p>"${escapeHtml(th)}"</p></div>
-    <div class="card tip"><p>🧩 Just like in <b>People Practice</b> — our brain made a fast guess. A detective looks for more clues before deciding.<br><br>🕵️ <b>Do you KNOW that for sure?</b></p></div>
+    <div class="step-title">Let's check what ${mn} said</div>
+    <div class="card"><h3>What ${mn} is telling you:</h3><p>"${escapeHtml(th)}"</p></div>
+    <div class="card tip"><p>🧩 Just like in <b>People Practice</b> — ${mn} made a fast guess. A detective looks for more clues before deciding if it's true.<br><br>🕵️ <b>Does ${mn} KNOW that for sure?</b></p></div>
     <div class="step-sub" style="margin-top:14px">Find a clue — could one of these also be true?</div>
     ${DETECTIVE.map(t=>`<button class="choice" onclick="pickOne(this)">
       <span class="ce">💡</span>${escapeHtml(t)}</button>`).join('')}
@@ -774,7 +1037,11 @@ renderers.afterPrompts=()=>{ answeredCount=0; flow.answers={}; showAfterQ(0); };
 function showAfterQ(i){
   if(i>=AFTER_Q.length){
     flow.reflectDone = answeredCount>=5;
-    go('rate',{when:'after'}); return;
+    // If she's logging right after a during-session, she already used tools —
+    // skip the "did you use a tool?" branch and go straight to notes.
+    if(flow.logging) go('reflectNotes');
+    else go('reflectCoping');
+    return;
   }
   const q=AFTER_Q[i], last=i===AFTER_Q.length-1;
   screen.innerHTML=`${topbar(null)}
@@ -803,7 +1070,140 @@ function afterNext(i){
   const box=$('aq'+i); const typed=box?box.value.trim():'';
   flow.answers[i]={chips:picked,text:typed||''};
   if(picked.length>0 || (typed && typed.length>2)) answeredCount++;
+  // Q index 2 is "Thoughtful or impulsive?" — intercept for Bubble moment
+  if(i===2 && picked.length){
+    const ans = picked[0].toLowerCase();
+    if(ans.includes('impulsive') || ans.includes('bit of both')){
+      flow.bubbleResumeQ = i+1;          // where to return after Bubble moment
+      go('bubbleReassure'); return;
+    }
+  }
   showAfterQ(i+1);
+}
+
+/* =============================================================
+   BUBBLE MOMENT — gentle reassurance + thoughtful do-over
+   When Adelyn says she was impulsive (or "a bit of both"),
+   Bubble herself speaks to her: you are not a bad kid.
+   Then a tap-first prompt: what would the thoughtful you have done?
+============================================================= */
+renderers.bubbleReassure = () => {
+  const mn=escapeHtml(state.monsterName||'Grumble');
+  screen.innerHTML=`${topbar(null)}
+  <div class="pad fade" style="text-align:center">
+    <span class="step-tag">A NOTE FROM BUBBLE 💜</span>
+    <div style="margin:14px auto 8px">${buddy('happy',132)}</div>
+    <div class="speech" style="margin:6px auto 14px;max-width:100%;text-align:left">
+      <b>Hey — impulsive happens.</b><br><br>
+      It doesn't make you a bad kid. It just means ${mn} was faster than you that time. Everybody does it sometimes — even grown-ups. 💜<br><br>
+      What matters is that you're <b>here, looking back</b>. That right there is the thoughtful you in action. I'm proud of you.
+    </div>
+    <button class="btn" onclick="go('bubbleDoover')">Thanks, Bubble 💜</button>
+  </div>`;
+};
+
+const DOOVER_OPTIONS = [
+  'Taken a deep breath first 🐉',
+  'Walked away to cool off 🚶',
+  'Asked a grown-up for help 🙋',
+  'Used a calm-down tool 🧰',
+  'Said how I felt with words 🗣️',
+  'Counted to 10 in my head 🔢',
+  'Stepped away to my cozy spot 🛋️',
+];
+renderers.bubbleDoover = () => {
+  screen.innerHTML=`${topbar(null)}
+  <div class="pad fade">
+    <span class="step-tag">A LITTLE DO-OVER 🌟</span>
+    <div class="step-title">If you could rewind it...</div>
+    <div class="step-sub">What is one <b>thoughtful</b> thing you could try next time? Tap any that fit.</div>
+    <div class="duo" style="margin:4px auto 6px">${buddy('',96)}</div>
+    <div class="chipwrap">
+      ${DOOVER_OPTIONS.map(o=>`<button class="chip" onclick="toggleChip(this,false)">
+        <span>${escapeHtml(o.slice(0,-2))}</span><span class="cx">${o.slice(-2)}</span></button>`).join('')}
+    </div>
+    <button class="moretoggle" onclick="$('doomore').style.display='block';this.style.display='none'">+ add my own idea</button>
+    <div id="doomore" style="display:none">
+      <textarea id="dootext" placeholder="What thoughtful thing could you try next time?"></textarea>
+    </div>
+    <button class="btn" onclick="dooverNext()">That's my plan ✅</button>
+    <div class="skipnote">No right answer — just imagining a do-over. 💜</div>
+  </div>`;
+};
+function dooverNext(){
+  const picked=[...screen.querySelectorAll('.chip.sel')].map(c=>c.textContent.trim());
+  const box=$('dootext'); const typed=box?box.value.trim():'';
+  flow.doover = { chips: picked, text: typed||'' };
+  showAfterQ(flow.bubbleResumeQ || 3);
+}
+
+/* ---------- REFLECT: did you use a coping tool? (optional, smart branch) ---------- */
+renderers.reflectCoping = () => {
+  screen.innerHTML=`${topbar(null)}
+  <div class="pad fade"><span class="step-tag">WHAT HELPED?</span>
+    <div class="step-title">Did you use a calm-down tool?</div>
+    <div class="step-sub">Something like moving your body, dragon breath, a mantra, a prayer...</div>
+    <div class="duo" style="margin:4px auto">${buddy('',92)}</div>
+    <button class="choice" onclick="reflectCopingYes()"><span class="ce">✅</span>Yes, I used one!</button>
+    <button class="choice" onclick="reflectCopingNo()"><span class="ce">🤔</span>No, not this time</button>
+    <div class="skipnote">Either answer is okay — this just helps us learn together. 💜</div>
+  </div>`;
+};
+/* YES -> pick which, and get celebrated */
+function reflectCopingYes(){
+  flow.usedCoping = true;
+  screen.innerHTML=`${topbar(null)}
+  <div class="pad fade"><span class="step-tag">YOU USED A TOOL! 🌟</span>
+    <div class="step-title">Amazing — which one helped?</div>
+    <div class="card tip"><p>🎉 Reaching for a tool when you're angry is a <b>big win</b>. That's exactly the skill you're growing!</p></div>
+    ${TOOLS.map(t=>`<button class="choice" onclick="reflectPickTool('${t.id}')">
+      <span class="ce">${t.e}</span>${escapeHtml(t.name)}</button>`).join('')}
+  </div>`;
+}
+function reflectPickTool(id){
+  const t=TOOLS.find(x=>x.id===id);
+  flow.tool = t;                       // recorded -> shows in therapist report
+  go('reflectNotes');
+}
+/* NO -> no shame, turn it into a next-time plan */
+function reflectCopingNo(){
+  flow.usedCoping = false;
+  screen.innerHTML=`${topbar(null)}
+  <div class="pad fade"><span class="step-tag">THAT'S OKAY 💜</span>
+    <div class="step-title">What could you try next time?</div>
+    <div class="card"><p>It's okay — hard moments happen, and you're here looking back, which is its own win. Let's make a plan: which tool could you try next time you feel that way?</p></div>
+    ${TOOLS.map(t=>`<button class="choice" onclick="reflectPlanTool('${t.id}')">
+      <span class="ce">${t.e}</span>${escapeHtml(t.name)}</button>`).join('')}
+  </div>`;
+}
+function reflectPlanTool(id){
+  const t=TOOLS.find(x=>x.id===id);
+  flow.nextTimeTool = t;               // a plan, not a tool-used
+  go('reflectNotes');
+}
+
+/* ---------- REFLECT: optional notes ---------- */
+renderers.reflectNotes = () => {
+  screen.innerHTML=`${topbar(null)}
+  <div class="pad fade"><span class="step-tag">TELL ME MORE 📝</span>
+    <div class="step-title">Anything else about what happened?</div>
+    <div class="step-sub">You can write the story in your own words — or skip it. Up to you.</div>
+    <div class="card tip"><p>💜 The more you tell, the better the grown-ups who love you can understand and help. But only share what you want to.</p></div>
+    <textarea id="rnotebox" placeholder="What happened? You can write as much or as little as you want..." style="min-height:120px"></textarea>
+    <button class="btn" onclick="reflectNotesNext()">Next</button>
+    <button class="btn ghost" onclick="reflectNotesSkip()">Skip for now</button>
+  </div>`;
+};
+function reflectNotesNext(){
+  const box=$('rnotebox');
+  flow.notes = box ? box.value.trim() : '';
+  if(flow.logging) finishFlow();
+  else go('rate',{when:'after'});
+}
+function reflectNotesSkip(){
+  flow.notes='';
+  if(flow.logging) finishFlow();
+  else go('rate',{when:'after'});
 }
 
 /* ---------- BRAVE ---------- */
@@ -885,7 +1285,7 @@ renderers.peopleStart = () => {
     <span class="step-tag">PEOPLE PRACTICE 🧩</span>
     <div class="step-title">Reading people — your superpower</div>
     <div class="duo" style="margin:6px auto">${buddy('',104)}</div>
-    <div class="card"><p>When something happens with friends, our brain makes a fast <b>guess</b> about why. Sometimes the guess is "they were being mean" — but lots of times it is something else.</p></div>
+    <div class="card"><p>When something happens with friends, our mind makes a fast <b>guess</b> about why. Sometimes ${escapeHtml(state.monsterName||'the anger monster')} jumps in with "they were being mean!" — but lots of times it is something else entirely.</p></div>
     <div class="card tip"><p>🧩 We will look at little moments and sort them. The trick: get good at telling a <b>real</b> unkind moment apart from a <b>misread</b> one. Both are real — this is about telling which is which.</p></div>
     <div class="card"><p>💜 And "that was actually unkind" is always okay to pick. If it WAS unkind, your feelings are right — and we will practice what to do about it too.</p></div>
     <button class="btn" onclick="peopleRound()">Start practicing 🧩</button>
@@ -1020,7 +1420,19 @@ function finishFlow(){
     title: flow.warn||flow.fear||(flow.door==='during'?'Got help with anger':'Reflected on a moment'),
     setoff: setoff || flow.warn || '',
     thought: flow.thought || '',
-    tool: flow.tool ? flow.tool.name : '',
+    tool: (flow.toolsUsed && flow.toolsUsed.length)
+      ? flow.toolsUsed.join(' → ')
+      : (flow.tool ? flow.tool.name : ''),
+    toolsCount: flow.toolsUsed ? flow.toolsUsed.length : (flow.tool ? 1 : 0),
+    gotGrownUp: !!flow.gotGrownUp,
+    nextTimeTool: flow.nextTimeTool ? flow.nextTimeTool.name : '',
+    usedCoping: flow.usedCoping,
+    notes: flow.notes || '',
+    doover: flow.doover ? (
+      (flow.doover.chips||[]).join('; ')
+        + (flow.doover.text ? (flow.doover.chips&&flow.doover.chips.length?' | ':'') + flow.doover.text : '')
+    ) : '',
+    parentNotes: [],          // populated only via the parent zone
     rateBefore: flow.rateBefore!=null?flow.rateBefore:null,
     rateAfter: flow.rateAfter!=null?flow.rateAfter:null,
     result: thoughtful || (flow.door==='before'?'caught early':'logged'),
@@ -1110,6 +1522,105 @@ const ITEMS=[
   {id:'star',   e:'⭐',n:'Star Pal',    c:7},
   {id:'rainbow',e:'🌈',n:'Rainbow Trail',c:12},
 ];
+/* =============================================================
+   REWARDS — real-world rewards (parent-set, two-step claiming)
+============================================================= */
+renderers.rewards = () => {
+  const rewards = state.rewards || [];
+  const pending = state.pendingClaims || [];
+  // points "held" by pending claims so she can't double-claim with the same points
+  const heldPts = pending.reduce((s,c)=>s+(c.cost||0),0);
+  const spendable = Math.max(0, state.points - heldPts);
+  screen.innerHTML=`${topbar('home')}
+  <div class="pad fade">
+    <span class="step-tag">REWARDS 🎁</span>
+    <div class="step-title">Real-world rewards</div>
+    <div class="step-sub">Trade your points for fun things — picked by you and a grown-up!</div>
+
+    <div class="card" style="display:flex;align-items:center;gap:14px">
+      <div style="font-size:38px">⭐</div>
+      <div style="flex:1">
+        <div style="font-family:'Baloo 2',cursive;font-size:30px;color:var(--grape-deep);line-height:1">${spendable}</div>
+        <div style="font-weight:700;color:var(--ink-soft);font-size:13px">points to spend</div>
+      </div>
+      ${heldPts?`<div style="text-align:right">
+        <div style="font-size:12px;font-weight:800;color:var(--orchid)">${heldPts}⭐</div>
+        <div style="font-size:10.5px;color:var(--ink-soft);font-weight:700">waiting for grown-up</div></div>`:''}
+    </div>
+
+    ${pending.length?`
+      <div class="door-q" style="margin-top:18px">Waiting for grown-up ⏳</div>
+      ${pending.map(c=>`
+        <div class="card" style="display:flex;gap:12px;align-items:center;background:#fff3d6">
+          <div style="font-size:24px">⏳</div>
+          <div style="flex:1">
+            <div style="font-weight:800;font-size:15px">${escapeHtml(c.name)}</div>
+            <div style="font-size:12px;color:var(--ink-soft);font-weight:700">Asked: ${escapeHtml(new Date(c.ts).toLocaleString())}</div>
+          </div>
+          <div style="font-weight:800;color:var(--tangerine)">${c.cost}⭐</div>
+        </div>`).join('')}`:''}
+
+    <div class="door-q" style="margin-top:18px">Available rewards</div>
+    ${rewards.length ? rewards.map(r=>{
+      const alreadyPending = pending.some(c=>c.rewardId===r.id);
+      const canGet = spendable >= r.cost && !alreadyPending;
+      return `<div class="card" style="display:flex;gap:12px;align-items:center">
+        <div style="font-size:30px">🎁</div>
+        <div style="flex:1">
+          <div style="font-weight:800;font-size:16px">${escapeHtml(r.name)}</div>
+          <div style="font-size:13px;color:var(--ink-soft);font-weight:700">${r.cost} ⭐</div>
+        </div>
+        ${alreadyPending
+          ? `<div class="pill" style="background:#fff3d6;color:#c8530f">Waiting ⏳</div>`
+          : canGet
+            ? `<button class="btn" style="width:auto;padding:10px 18px;margin:0" onclick="claimReward('${r.id}')">Get it!</button>`
+            : `<div class="pill" style="background:#eee;color:#999">Locked 🔒</div>`}
+      </div>`;
+    }).join('') : `<div class="card"><p>A grown-up hasn't set up rewards yet. Ask them to add some in the parent zone!</p></div>`}
+
+    ${(state.earnedRewards && state.earnedRewards.length) ? `
+      <div class="door-q" style="margin-top:18px">Earned ✨</div>
+      ${state.earnedRewards.slice(0,8).map(e=>`
+        <div class="card" style="display:flex;gap:12px;align-items:center;background:#eaf4ec">
+          <div style="font-size:22px">✨</div>
+          <div style="flex:1">
+            <div style="font-weight:800;font-size:14.5px">${escapeHtml(e.name)}</div>
+            <div style="font-size:12px;color:var(--ink-soft);font-weight:700">${escapeHtml(new Date(e.ts).toLocaleString())}</div>
+          </div>
+          <div class="pill" style="background:#3fd6a8;color:#fff">Earned ✓</div>
+        </div>`).join('')}`:''}
+
+    <button class="btn" onclick="go('home')">Back home</button>
+  </div>`;
+};
+
+function claimReward(rewardId){
+  const r = (state.rewards||[]).find(x=>x.id===rewardId);
+  if(!r) return;
+  if(!state.pendingClaims) state.pendingClaims = [];
+  // prevent duplicate pending claims for the same reward
+  if(state.pendingClaims.some(c=>c.rewardId===rewardId)) return;
+  const heldPts = state.pendingClaims.reduce((s,c)=>s+(c.cost||0),0);
+  if(state.points - heldPts < r.cost) return; // not enough spendable
+  state.pendingClaims.unshift({
+    claimId: 'c'+Date.now()+'_'+Math.floor(Math.random()*1000),
+    rewardId, name: r.name, cost: r.cost, ts: Date.now(),
+  });
+  save();
+  // show a quick confirmation
+  screen.innerHTML=`<div class="celebrate" id="celeb">
+    <div style="font-size:32px">🎁 ✨ 🎁</div>
+    <h2>Reward requested!</h2>
+    <div class="big">You asked for: <b>${escapeHtml(r.name)}</b></div>
+    <div class="duo" style="margin:8px 0">${buddy('happy',104)}</div>
+    <div class="big" style="color:var(--orchid)">Now a grown-up will look at it and say yes! 🌟</div>
+    <div class="big" style="font-size:13px;margin-top:6px">Your ${r.cost} points are held for now. They go back if a grown-up can't say yes.</div>
+    <button class="btn" style="max-width:260px" onclick="go('rewards')">Back to rewards</button>
+    <button class="btn ghost" style="max-width:260px" onclick="go('home')">Home</button>
+  </div>`;
+  burst();
+}
+
 renderers.closet = () => {
   screen.innerHTML=`${topbar('home')}
   <div class="pad fade"><span class="step-tag">BUBBLE'S CLOSET 🎩</span>
@@ -1189,6 +1700,40 @@ renderers.parentHome = () => {
         <button class="chip" onclick="openReport('all')">All Time</button>
       </div></div>
 
+    <div class="card"><h3>📝 Review &amp; annotate her moments</h3>
+      <p>Tap a moment to add your own observations or context. These notes are <b>hidden from Adelyn</b> and only appear in the therapist report.</p>
+      <button class="btn" style="margin-top:8px" onclick="go('parentReview')">Open moment review ›</button>
+    </div>
+
+    ${(state.pendingClaims && state.pendingClaims.length) ? `
+      <div class="card" style="background:#fff3d6">
+        <h3>⏳ Pending reward claims (${state.pendingClaims.length})</h3>
+        <p>Adelyn has asked for these. Approve = points spent &amp; she gets it. Decline = points go back to her.</p>
+        ${state.pendingClaims.map(c=>`
+          <div style="background:#fff;border-radius:14px;padding:12px;margin-top:8px;display:flex;gap:10px;align-items:center">
+            <div style="flex:1">
+              <div style="font-weight:800;font-size:15px">${escapeHtml(c.name)}</div>
+              <div style="font-size:12px;color:var(--ink-soft);font-weight:700">${c.cost}⭐ · asked ${escapeHtml(new Date(c.ts).toLocaleString())}</div>
+            </div>
+            <button class="chip" style="background:#3fd6a8;color:#fff" onclick="approveClaim('${c.claimId}')">Approve ✓</button>
+            <button class="chip" onclick="declineClaim('${c.claimId}')">Decline ✗</button>
+          </div>`).join('')}
+      </div>` : ''}
+
+    <div class="card"><h3>🎁 Real-world rewards</h3>
+      <p>Set up what Adelyn can earn. She sees these in her Rewards screen.</p>
+      ${(state.rewards||[]).map(r=>`
+        <div style="background:#f8f0fb;border-radius:12px;padding:10px;margin-top:8px;display:flex;gap:8px;align-items:center">
+          <input type="text" id="rname_${r.id}" value="${escapeAttr(r.name)}"
+            style="flex:1;border:2px solid var(--lilac);border-radius:8px;padding:7px;font-family:'Nunito',sans-serif;font-size:14px;font-weight:600;color:var(--ink)">
+          <input type="number" id="rcost_${r.id}" value="${r.cost}" min="1"
+            style="width:64px;border:2px solid var(--lilac);border-radius:8px;padding:7px;font-family:'Baloo 2',cursive;font-size:15px;color:var(--grape);text-align:center">
+          <button class="chip" onclick="saveReward('${r.id}')">Save</button>
+          <button class="chip" onclick="deleteReward('${r.id}')" style="background:#fde0e3;color:#d8334a">✕</button>
+        </div>`).join('')}
+      <button class="btn" style="margin-top:10px" onclick="addReward()">+ Add a reward</button>
+    </div>
+
     <div class="card"><h3>Points — values &amp; live preview</h3>
       ${cfgRow('reflectPts','Reflection (after the fact)')}
       ${cfgRow('duringPts','Used app while angry')}
@@ -1250,6 +1795,153 @@ function sendNote(){
 }
 function renameMonster(){
   const b=$('mname'); if(b&&b.value.trim()){ state.monsterName=b.value.trim(); save(); go('parentHome'); }
+}
+
+/* =============================================================
+   PARENT MOMENT REVIEW — read her logs, add private notes
+   Notes are saved on each log entry under `parentNotes: []`.
+   Adelyn never sees them in her app.
+============================================================= */
+renderers.parentReview = () => {
+  const log = state.log || [];
+  const emojis={before:'🌤️',during:'🔥',after:'📖',brave:'🦁',people:'🧩'};
+  screen.innerHTML=`${topbar('parentHome')}
+  <div class="pad fade">
+    <span class="step-tag">REVIEW MOMENTS 📝</span>
+    <div class="step-title">Adelyn's moments</div>
+    <div class="step-sub">Tap any moment to add private context. Notes are hidden from her.</div>
+    ${log.length ? log.map((e,i)=>{
+      const when = new Date(e.ts).toLocaleString();
+      const noteCount = (e.parentNotes||[]).length;
+      const ba = (e.rateBefore!=null&&e.rateAfter!=null) ? `${e.rateBefore}→${e.rateAfter}` : '';
+      return `<button class="choice" onclick="go('parentNoteEdit',{idx:${i}})" style="display:flex;align-items:flex-start">
+        <span class="ce">${emojis[e.door]||'⭐'}</span>
+        <span style="flex:1">
+          <div style="font-weight:800;font-size:14.5px">${escapeHtml(e.title||'Moment')}</div>
+          <div style="font-size:12px;color:var(--ink-soft);font-weight:600;margin-top:2px">${escapeHtml(when)}${ba?' · '+ba:''}${e.tool?' · '+escapeHtml(e.tool):''}</div>
+          ${noteCount?`<div style="font-size:11.5px;color:var(--orchid);font-weight:800;margin-top:3px">📝 ${noteCount} parent note${noteCount===1?'':'s'}</div>`:''}
+        </span>
+      </button>`;
+    }).join('') : `<div class="card"><p>No moments logged yet.</p></div>`}
+    <button class="btn" onclick="go('parentHome')">Back to parent zone</button>
+  </div>`;
+};
+renderers.parentNoteEdit = (d) => {
+  const idx = d.idx;
+  const e = state.log[idx];
+  if(!e){ go('parentReview'); return; }
+  const emojis={before:'🌤️',during:'🔥',after:'📖',brave:'🦁',people:'🧩'};
+  const ba = (e.rateBefore!=null&&e.rateAfter!=null) ? `Feeling ${e.rateBefore} → ${e.rateAfter}` : '';
+  const chipFrom = a => (a && a.chips ? a.chips.join(', ') : '');
+  const where = chipFrom(e.answers && e.answers[0]);   // legacy: not always present
+  const who   = chipFrom(e.answers && e.answers[1]);
+  const did   = chipFrom(e.answers && e.answers[2]);
+  // ^ these only populate if a future enhancement keeps answers in the log;
+  // for now we show what fields the entry has.
+  screen.innerHTML=`${topbar('parentReview')}
+  <div class="pad fade">
+    <span class="step-tag">MOMENT DETAILS</span>
+    <div class="step-title">${emojis[e.door]||'⭐'} ${escapeHtml(e.title||'Moment')}</div>
+    <div class="step-sub">${escapeHtml(new Date(e.ts).toLocaleString())}</div>
+
+    <div class="card"><h3>What she logged</h3>
+      ${e.setoff?`<p><b>Trigger:</b> ${escapeHtml(e.setoff)}</p>`:''}
+      ${e.thought?`<p><b>What ${escapeHtml(state.monsterName||'Grumble')} said:</b> "${escapeHtml(e.thought)}"</p>`:''}
+      ${e.tool?`<p><b>Tool(s) used:</b> ${escapeHtml(e.tool)}</p>`:''}
+      ${e.nextTimeTool?`<p><b>Next-time plan:</b> ${escapeHtml(e.nextTimeTool)}</p>`:''}
+      ${e.doover?`<p><b>Thoughtful do-over she imagined:</b> ${escapeHtml(e.doover)}</p>`:''}
+      ${ba?`<p><b>${ba}</b></p>`:''}
+      ${e.notes?`<p style="margin-top:8px;padding:8px 12px;background:#fff3d6;border-radius:10px"><b>Adelyn wrote:</b><br>${escapeHtml(e.notes)}</p>`:''}
+    </div>
+
+    ${(e.parentNotes&&e.parentNotes.length)?`
+      <div class="card"><h3>Your previous notes</h3>
+        ${e.parentNotes.map((n,ni)=>`
+          <div style="padding:10px;background:#eef3ff;border-radius:10px;margin-top:6px;display:flex;gap:8px;align-items:flex-start">
+            <div style="flex:1"><div style="font-size:11px;color:var(--ink-soft);font-weight:800">${escapeHtml(new Date(n.ts).toLocaleString())}</div>
+            <div style="font-size:14px;font-weight:600;margin-top:3px">${escapeHtml(n.text)}</div></div>
+            <button onclick="deleteParentNote(${idx},${ni})" style="background:none;border:none;color:var(--ink-soft);font-weight:800;cursor:pointer">✕</button>
+          </div>`).join('')}
+      </div>`:''}
+
+    <div class="card"><h3>Add a parent note</h3>
+      <p style="font-size:13px;color:var(--ink-soft);font-weight:600">Hidden from Adelyn. Visible to you and in the therapist report.</p>
+      <textarea id="pnote" placeholder="What you observed, context she might not have included, what helped or hurt..." style="margin-top:8px"></textarea>
+      <button class="btn" style="margin-top:8px" onclick="addParentNote(${idx})">Save note 📝</button>
+    </div>
+    <button class="btn ghost" onclick="go('parentReview')">Back to moment list</button>
+  </div>`;
+};
+function addParentNote(idx){
+  const b=$('pnote'); if(!b || !b.value.trim()) return;
+  const e = state.log[idx]; if(!e) return;
+  if(!e.parentNotes) e.parentNotes = [];
+  e.parentNotes.unshift({ ts: Date.now(), text: b.value.trim() });
+  save();
+  go('parentNoteEdit',{idx});
+}
+function deleteParentNote(idx, noteIdx){
+  if(!confirm('Delete this note?')) return;
+  const e = state.log[idx]; if(!e || !e.parentNotes) return;
+  e.parentNotes.splice(noteIdx,1);
+  save();
+  go('parentNoteEdit',{idx});
+}
+
+/* ---------- REWARDS — parent management & claim approval ---------- */
+function approveClaim(claimId){
+  if(!state.pendingClaims) return;
+  const idx = state.pendingClaims.findIndex(c=>c.claimId===claimId);
+  if(idx<0) return;
+  const c = state.pendingClaims[idx];
+  if(state.points < c.cost){
+    alert('Adelyn no longer has enough points for this reward. Decline it instead.');
+    return;
+  }
+  // Deduct points and mark earned. Lifetime totalPoints stays untouched (Lesson 1).
+  state.points -= c.cost;
+  if(!state.earnedRewards) state.earnedRewards = [];
+  state.earnedRewards.unshift({ rewardId: c.rewardId, name: c.name, cost: c.cost, ts: Date.now() });
+  state.pendingClaims.splice(idx,1);
+  save();
+  go('parentHome');
+}
+function declineClaim(claimId){
+  if(!state.pendingClaims) return;
+  const idx = state.pendingClaims.findIndex(c=>c.claimId===claimId);
+  if(idx<0) return;
+  if(!confirm('Decline this reward? Her points will go back to her.')) return;
+  state.pendingClaims.splice(idx,1);
+  save();
+  go('parentHome');
+}
+function addReward(){
+  if(!state.rewards) state.rewards = [];
+  state.rewards.push({
+    id: 'r'+Date.now()+'_'+Math.floor(Math.random()*1000),
+    name: 'New reward',
+    cost: 20,
+  });
+  save();
+  go('parentHome');
+}
+function saveReward(id){
+  const r = (state.rewards||[]).find(x=>x.id===id); if(!r) return;
+  const nb = $('rname_'+id), cb = $('rcost_'+id);
+  if(nb && nb.value.trim()) r.name = nb.value.trim();
+  if(cb){
+    const n = parseInt(cb.value,10);
+    if(!isNaN(n) && n>0) r.cost = n;
+  }
+  save();
+  go('parentHome');
+}
+function deleteReward(id){
+  if(!confirm('Delete this reward? Any pending claim for it will also be removed.')) return;
+  state.rewards = (state.rewards||[]).filter(x=>x.id!==id);
+  state.pendingClaims = (state.pendingClaims||[]).filter(c=>c.rewardId!==id);
+  save();
+  go('parentHome');
 }
 renderers.changePin = () => {
   screen.innerHTML=`${topbar('parentHome')}
