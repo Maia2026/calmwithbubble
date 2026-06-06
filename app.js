@@ -47,6 +47,7 @@ function freshState(){
     ],
     pendingClaims: [],        // {claimId, rewardId, name, cost, ts} awaiting parent approval
     earnedRewards: [],        // {rewardId, name, ts} for history
+    gratitudes: [],           // {ts, text, chip, type:'gratitude'|'faith'} entries
     customMantras: [],
     customVerses: [],
     parentNotes: [],
@@ -320,6 +321,19 @@ function buildReport(kind){
       ? `<table><tr><th>When</th><th>Trigger</th><th>What Adelyn wrote</th></tr>${noteList}</table>`
       : '<p>No written notes in this period.</p>'}
 
+    <h2>Gratitude &amp; quiet moments</h2>
+    <p style="font-size:12px;color:#666">What Adelyn noticed as good in her days — and times she paused for a reminder she is loved.</p>
+    ${(()=>{
+      const gs = (state.gratitudes||[]).filter(g => (g.ts||0) >= start)
+        .sort((a,b)=>(b.ts||0)-(a.ts||0));
+      if(!gs.length) return '<p>No gratitude entries in this period.</p>';
+      const rows = gs.map(g => g.type==='faith'
+        ? `<tr><td>${escapeHtml(new Date(g.ts).toLocaleString())}</td><td>Quiet moment 💛</td><td><i>Tapped "I need a reminder I'm loved" — viewed a comfort/identity message.</i></td></tr>`
+        : `<tr><td>${escapeHtml(new Date(g.ts).toLocaleString())}</td><td>Gratitude 🌻</td><td>${escapeHtml(g.text||'')}</td></tr>`
+      ).join('');
+      return `<table><tr><th>When</th><th>Type</th><th>What Adelyn wrote / did</th></tr>${rows}</table>`;
+    })()}
+
     <h2>Parent observations</h2>
     <p style="font-size:12px;color:#666">Context added by parent in the parent zone. Hidden from Adelyn.</p>
     ${parentNoteList
@@ -589,11 +603,36 @@ function feelWord(v){
 const renderers = {};
 
 /* ---------- HOME ---------- */
+/* ---------- Specific cheerleader greetings tied to her real activity ---------- */
+function bubbleGreeting(streak, u){
+  // candidate pool — start with the always-warm baseline
+  const pool = [
+    "Hi, I'm <b>Bubble</b>. I'm so glad you came back today.",
+    "I was just thinking about you. Glad you're here.",
+    "Hey friend. Whatever today is — I'm right here with you.",
+    "I'm <b>Bubble</b>, your buddy. We can take this one moment at a time, together.",
+  ];
+  // add activity-specific lines when there's something real to point to
+  if(streak >= 3) pool.push(`That is <b>${streak} days in a row</b> you've come back. That kind of showing-up is real.`);
+  if(u && u.week >= 5) pool.push(`You've used your tools <b>${u.week} times this week</b>. You keep trying, even when it's hard. I see that.`);
+  if(u && u.day >= 2) pool.push("Already back today? You're really doing the work. I'm glad you came.");
+  if(state.totalPoints && state.totalPoints >= 50) pool.push("Look at all you've practiced. The brave you is growing every day.");
+  if(state.log && state.log.length){
+    const last = state.log[0];
+    if(last && last.door === 'brave') pool.push("Last time you took a brave step. That stays with you, you know.");
+    if(last && last.door === 'people') pool.push("Last time you practiced reading people. That's a real skill — and you're building it.");
+    if(last && last.rateAfter != null && last.rateBefore != null && last.rateAfter < last.rateBefore) pool.push("Last time, your feeling came down. That was your hard work — not magic.");
+  }
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
 renderers.home = () => {
   const streak = currentStreak();
   const u = usageCounts();
   const note = (state.parentNotes && state.parentNotes.length && !state.parentNotes[0].dismissed)
     ? state.parentNotes[0] : null;
+  // Specific, warm greeting tied to her actual activity when possible
+  const greeting = bubbleGreeting(streak, u);
   screen.innerHTML = `
   <div style="display:flex;align-items:center;gap:10px;padding:14px 18px 6px">
     <div class="streakpill" title="day streak">🔥 ${streak}</div>
@@ -603,7 +642,7 @@ renderers.home = () => {
     <div style="text-align:center"><div class="hero-name">Adelyn's App</div>
     <div class="hello">Hi, Adelyn! 👋</div></div>
     <div class="duo" style="margin:4px auto 0">${buddy('',124)}</div>
-    <div class="speech">Hi! I'm <b>Bubble</b>, your buddy. I help you with big feelings — you're never alone with them. What's going on?</div>
+    <div class="speech">${greeting}</div>
     ${note?`<div class="parentnote" onclick="dismissNote()">
       <div style="font-weight:800;font-size:12px;color:var(--grape);letter-spacing:.5px">💌 NEW NOTE FROM MOM/DAD</div>
       <div style="font-weight:700;font-size:15px;color:var(--ink);margin-top:3px">${escapeHtml(note.text)}</div>
@@ -626,6 +665,7 @@ renderers.home = () => {
     <button class="door people" onclick="go('peopleStart')"><div class="emoji">🧩</div>
       <div><div class="dt">People practice</div><div class="ds">Get better at reading people</div></div></button>
     <div class="minirow">
+      <button class="minicard" onclick="go('gratitude')"><div class="mi">🌻</div><div class="ml">Gratitude</div></button>
       <button class="minicard" onclick="go('progress')"><div class="mi">🏆</div><div class="ml">My Wins</div></button>
       <button class="minicard" onclick="go('rewards')"><div class="mi">🎁</div><div class="ml">Rewards</div></button>
       <button class="minicard" onclick="go('closet')"><div class="mi">🎩</div><div class="ml">Closet</div></button>
@@ -1005,21 +1045,158 @@ function saveVerseMaybe(){
   const b=$('versebox');
   if(b && b.value.trim().length>1){ state.customVerses.push(b.value.trim()); save(); }
 }
+/* =============================================================
+   THOUGHT DETECTIVE — 5-question walkthrough (therapist framework)
+   1. How big is the problem? (size check)
+   2. Is it actually real/true? (truth check)
+   3. Is it actually a bad thing? (importance check)
+   4. Is it something you can control? (control check)
+   5. Comment or judgment? (intent check)
+   The order matters — each question sets up the next.
+============================================================= */
 renderers.detective = () => {
-  const th=flow.thought||'that thought';
-  const mn=escapeHtml(state.monsterName || 'the anger monster');
+  const th = flow.thought || 'that thought';
+  const mn = escapeHtml(state.monsterName || 'the anger monster');
+  // reset the detective session
+  flow.detective = { step:0, answers:{} };
   screen.innerHTML=`${topbar(null)}
-  <div class="pad fade"><span class="step-tag">THOUGHT DETECTIVE 🔍</span>
-    <div class="step-title">Let's check what ${mn} said</div>
-    <div class="card"><h3>What ${mn} is telling you:</h3><p>"${escapeHtml(th)}"</p></div>
-    <div class="card tip"><p>🧩 Just like in <b>People Practice</b> — ${mn} made a fast guess. A detective looks for more clues before deciding if it's true.<br><br>🕵️ <b>Does ${mn} KNOW that for sure?</b></p></div>
-    <div class="step-sub" style="margin-top:14px">Find a clue — could one of these also be true?</div>
-    ${DETECTIVE.map(t=>`<button class="choice" onclick="pickOne(this)">
-      <span class="ce">💡</span>${escapeHtml(t)}</button>`).join('')}
-    <div class="card" style="margin-top:12px"><p style="font-size:13.5px">💜 And if it really WAS unkind — that is okay to know too. Your feelings are right, and you can set a kind, strong boundary.</p></div>
-    <button class="btn go" onclick="afterTool()">I looked for clues ✅</button>
+  <div class="pad fade">
+    <span class="step-tag">THOUGHT DETECTIVE 🔍</span>
+    <div class="step-title">Let's investigate what ${mn} said</div>
+    <div class="card"><h3>What ${mn} is telling you:</h3><p style="font-size:15.5px">"${escapeHtml(th)}"</p></div>
+    <div class="card tip">
+      <p>🕵️ A detective doesn't just believe the first thing someone says — they check it out.</p>
+      <p>We are going to ask <b>5 questions</b> about what ${mn} is telling you. By the end, you will know if ${mn} is right, or if there is a better way to see it.</p>
+    </div>
+    <button class="btn" onclick="detectiveStep(1)">Start the investigation 🔍</button>
   </div>`;
 };
+
+function detectiveStep(n){
+  const mn = escapeHtml(state.monsterName || 'the anger monster');
+  if(!flow.detective) flow.detective = { step:0, answers:{} };
+  flow.detective.step = n;
+
+  // progress bar (5 steps)
+  const prog = `<div class="bar" style="margin:8px 0 14px"><i style="width:${((n-1)/5)*100}%"></i></div>
+    <div style="font-weight:800;color:var(--orchid);font-size:13px">Question ${n} of 5</div>`;
+
+  if(n===1){
+    screen.innerHTML=`${topbar(null)}<div class="pad fade">
+      <span class="step-tag">Q1: HOW BIG IS IT?</span>${prog}
+      <div class="step-title">How big is this problem, really?</div>
+      <div class="step-sub">Sometimes ${mn} makes a small thing feel huge. Tap how big the problem is for real:</div>
+      <button class="choice" onclick="detectivePick(1,'tiny')"><span class="ce">🐜</span>Tiny — it will not matter in 5 minutes</button>
+      <button class="choice" onclick="detectivePick(1,'small')"><span class="ce">🌱</span>Small — not great, but not a big deal</button>
+      <button class="choice" onclick="detectivePick(1,'medium')"><span class="ce">⛅</span>Medium — it matters, but I can handle it</button>
+      <button class="choice" onclick="detectivePick(1,'big')"><span class="ce">⛈️</span>Big — this is a real problem</button>
+    </div>`;
+    return;
+  }
+  if(n===2){
+    const lastWord = flow.thought ? 'that thought' : 'what '+mn+' said';
+    screen.innerHTML=`${topbar(null)}<div class="pad fade">
+      <span class="step-tag">Q2: IS IT TRUE?</span>${prog}
+      <div class="step-title">Is ${lastWord} actually true?</div>
+      <div class="step-sub">${mn} is fast, but ${mn} sometimes guesses wrong. Do you actually <b>know</b> it is true?</div>
+      <button class="choice" onclick="detectivePick(2,'sure')"><span class="ce">✅</span>Yes — I am sure it is true</button>
+      <button class="choice" onclick="detectivePick(2,'maybe')"><span class="ce">🤔</span>Maybe — I am not really sure</button>
+      <button class="choice" onclick="detectivePick(2,'guess')"><span class="ce">💭</span>${mn} is guessing — I do not actually know</button>
+      <button class="choice" onclick="detectivePick(2,'false')"><span class="ce">❌</span>It is probably not true</button>
+    </div>`;
+    return;
+  }
+  if(n===3){
+    screen.innerHTML=`${topbar(null)}<div class="pad fade">
+      <span class="step-tag">Q3: IS IT A BAD THING?</span>${prog}
+      <div class="step-title">Even if it IS true... is it actually a bad thing?</div>
+      <div class="step-sub">Sometimes we get upset about something that is just <b>different</b> — not bad. What about this one?</div>
+      <button class="choice" onclick="detectivePick(3,'bad')"><span class="ce">😞</span>Yes — it really is a bad thing</button>
+      <button class="choice" onclick="detectivePick(3,'annoying')"><span class="ce">😒</span>Not bad, just annoying</button>
+      <button class="choice" onclick="detectivePick(3,'different')"><span class="ce">🤷</span>It is just different, not actually bad</button>
+      <button class="choice" onclick="detectivePick(3,'okay')"><span class="ce">🙂</span>Actually... it is okay</button>
+    </div>`;
+    return;
+  }
+  if(n===4){
+    screen.innerHTML=`${topbar(null)}<div class="pad fade">
+      <span class="step-tag">Q4: CAN YOU CONTROL IT?</span>${prog}
+      <div class="step-title">Is this something you can change?</div>
+      <div class="step-sub">If you CAN do something — what a relief! If you cannot, getting mad does not help. Which is it?</div>
+      <button class="choice" onclick="detectivePick(4,'me')"><span class="ce">💪</span>Yes — I can do something about it</button>
+      <button class="choice" onclick="detectivePick(4,'ask')"><span class="ce">🙋</span>I can ask a grown-up to help</button>
+      <button class="choice" onclick="detectivePick(4,'partly')"><span class="ce">🤏</span>A little — but not all of it</button>
+      <button class="choice" onclick="detectivePick(4,'no')"><span class="ce">🌬️</span>No — this one I cannot control</button>
+    </div>`;
+    return;
+  }
+  if(n===5){
+    screen.innerHTML=`${topbar(null)}<div class="pad fade">
+      <span class="step-tag">Q5: COMMENT OR JUDGMENT?</span>${prog}
+      <div class="step-title">Was someone making a <b>comment</b> or a <b>judgment</b>?</div>
+      <div class="card tip">
+        <p>🗣️ A <b>comment</b> is just <i>noticing something</i>. Like "your shirt is purple." Not good or bad — just true.</p>
+        <p>⚖️ A <b>judgment</b> is when someone decides good or bad about you. Like "your shirt looks weird."</p>
+        <p>${mn} sometimes hears a comment and shouts "they are judging you!" — when really, they were just noticing.</p>
+      </div>
+      <button class="choice" onclick="detectivePick(5,'comment')"><span class="ce">🗣️</span>A comment — just noticing, not judging</button>
+      <button class="choice" onclick="detectivePick(5,'aboutother')"><span class="ce">↔️</span>A comment about someone else, not me</button>
+      <button class="choice" onclick="detectivePick(5,'question')"><span class="ce">❓</span>Actually a question, not a judgment</button>
+      <button class="choice" onclick="detectivePick(5,'unsure')"><span class="ce">🤔</span>I cannot tell — could be either</button>
+      <button class="choice" onclick="detectivePick(5,'judgment')"><span class="ce">⚖️</span>A judgment — they were being unkind</button>
+      <button class="choice" onclick="detectivePick(5,'na')"><span class="ce">➖</span>This one is not about a person — skip</button>
+    </div>`;
+    return;
+  }
+  detectiveDone();
+}
+
+function detectivePick(step, val){
+  flow.detective.answers[step] = val;
+  if(step<5) detectiveStep(step+1);
+  else detectiveDone();
+}
+
+function detectiveDone(){
+  const a = (flow.detective && flow.detective.answers) || {};
+  const mn = escapeHtml(state.monsterName || 'the anger monster');
+  // Build a short, kind summary based on her answers — not a verdict, just a mirror.
+  let lines = [];
+  if(a[1]==='tiny' || a[1]==='small') lines.push("This one is <b>smaller</b> than it felt at first. Good catch.");
+  if(a[1]==='medium')                  lines.push("This is a <b>medium-sized</b> thing — real, but you can handle it.");
+  if(a[1]==='big')                     lines.push("This is a <b>real big</b> problem — your feelings about it make sense.");
+  if(a[2]==='guess' || a[2]==='false') lines.push(mn+" was <b>guessing</b> — and probably wrong this time.");
+  if(a[2]==='maybe')                   lines.push("You are not sure it is true — that is okay, you do not have to know everything.");
+  if(a[2]==='sure')                    lines.push("Okay — you are sure it is true. That is real information.");
+  if(a[3]==='okay' || a[3]==='different') lines.push("And it is not actually a <b>bad</b> thing — just different. Big difference!");
+  if(a[3]==='annoying')                lines.push("It is annoying, not actually bad — that is good to know.");
+  if(a[3]==='bad')                     lines.push("And it IS a bad thing — your feelings are right.");
+  if(a[4]==='me' || a[4]==='ask')      lines.push("And you <b>can</b> do something about it. That is great news!");
+  if(a[4]==='partly')                  lines.push("You can change part of it — focus on that part.");
+  if(a[4]==='no')                      lines.push("You cannot control this one. Getting mad will not change it — letting it go is a brave choice.");
+  if(a[5]==='comment')                 lines.push("It was a <b>comment</b>, not a judgment. They were just noticing — that is not the same as being mean.");
+  if(a[5]==='aboutother')              lines.push("That comment was about someone else — not about you. ${mn} was making it personal when it was not.");
+  if(a[5]==='question')                lines.push("It was a <b>question</b>, not a judgment. People ask questions to understand, not to attack.");
+  if(a[5]==='unsure')                  lines.push("Hard to tell — when you cannot tell, you can <b>ask</b>: 'did you mean that as a joke or a real thing?'");
+  if(a[5]==='judgment')                lines.push("That was a <b>judgment</b>, and that is not okay. You can set a kind, strong boundary about it.");
+
+  screen.innerHTML=`${topbar(null)}
+  <div class="pad fade">
+    <span class="step-tag">CASE CLOSED 🔍</span>
+    <div class="step-title">Here is what the detective found</div>
+    <div class="card">
+      ${lines.map(l=>`<p style="margin:6px 0">🔎 ${l}</p>`).join('')}
+    </div>
+    ${a[5]==='judgment' ? `
+      <div class="card tip"><p>💪 Want to practice <b>speaking up</b> kindly but strongly about that?</p>
+        <button class="btn" style="margin-top:8px" onclick="go('boundaryPractice')">Practice speaking up 💪</button>
+      </div>` : ''}
+    <div class="card" style="background:#eaf4ec">
+      <p>🌟 You just did a really hard thing — you slowed down and <b>looked</b> at the thought instead of just believing it. That is the thoughtful you in action.</p>
+    </div>
+    <button class="btn go" onclick="afterTool()">I am done investigating ✅</button>
+  </div>`;
+}
 renderers.express = () => {
   screen.innerHTML=`${topbar(null)}
   <div class="pad fade"><span class="step-tag">GET THE FEELING OUT ✏️</span>
@@ -1286,11 +1463,156 @@ renderers.peopleStart = () => {
     <div class="step-title">Reading people — your superpower</div>
     <div class="duo" style="margin:6px auto">${buddy('',104)}</div>
     <div class="card"><p>When something happens with friends, our mind makes a fast <b>guess</b> about why. Sometimes ${escapeHtml(state.monsterName||'the anger monster')} jumps in with "they were being mean!" — but lots of times it is something else entirely.</p></div>
-    <div class="card tip"><p>🧩 We will look at little moments and sort them. The trick: get good at telling a <b>real</b> unkind moment apart from a <b>misread</b> one. Both are real — this is about telling which is which.</p></div>
-    <div class="card"><p>💜 And "that was actually unkind" is always okay to pick. If it WAS unkind, your feelings are right — and we will practice what to do about it too.</p></div>
-    <button class="btn" onclick="peopleRound()">Start practicing 🧩</button>
+    <div class="step-sub" style="margin-top:14px">Pick what you want to practice today:</div>
+    <button class="door before" style="margin-top:8px" onclick="peopleRound()">
+      <div class="emoji">🧩</div>
+      <div><div class="dt">Sort situations</div><div class="ds">Mean? joke? accident?</div></div>
+    </button>
+    <button class="door after" style="margin-top:10px" onclick="go('commentVsJudgment')">
+      <div class="emoji">🗣️</div>
+      <div><div class="dt">Comment or judgment?</div><div class="ds">Is someone noticing — or judging?</div></div>
+    </button>
+    <div class="card tip" style="margin-top:14px"><p>💜 "That was actually unkind" is always okay to pick. If it WAS unkind, your feelings are right — and we practice what to do about it too.</p></div>
   </div>`;
 };
+
+/* =============================================================
+   COMMENT vs JUDGMENT — practice telling them apart
+   The piece Adelyn needs most: not every comment is a judgment.
+============================================================= */
+const COMMENT_SCENES = [
+  // clear comments
+  { s:'A friend says: "Your shirt is purple today."',     best:'comment',
+    note:'They are <b>just noticing</b> — that is what a comment is. Not good, not bad. Purple is just purple.' },
+  { s:'Someone says: "Your hair is in a ponytail."',      best:'comment',
+    note:'A comment, not a judgment. They are just saying what they see.' },
+  { s:'Someone says: "You\'re younger than me."',          best:'comment',
+    note:'A simple fact — they are noticing, not putting you down. (Even if it stings a little!)' },
+  { s:'Your teacher says: "You drew that really fast."',  best:'comment',
+    note:'A comment. "Fast" is just describing — not saying fast is good or bad.' },
+
+  // about-someone-else (the sneaky ones for Adelyn)
+  { s:'Emily got picked first for the team today.',       best:'aboutother',
+    note:'This is not even about you — it is about Emily. ${MN} might say "they like her better!" — but really, it is just one moment of one game.' },
+  { s:'A friend says: "I really like Emily\'s drawing."',  best:'aboutother',
+    note:'This is a <b>comment about Emily\'s drawing</b> — not a judgment of yours. Liking one thing does not mean disliking another.' },
+
+  // questions (easy to mishear)
+  { s:'Someone asks: "Why did you do it that way?"',      best:'question',
+    note:'A <b>question</b>, not a judgment. People ask questions to understand. You can just answer: "I tried it this way."' },
+  { s:'A friend says: "Are you mad?"',                     best:'question',
+    note:'A question, not an accusation. They might be checking on you.' },
+
+  // clear judgments (real ones)
+  { s:'A kid says: "That shirt looks weird on you."',     best:'judgment',
+    note:'That IS a judgment — they decided "weird" about something on you. Your feelings about that are right.' },
+  { s:'Someone says: "Your drawing is bad."',             best:'judgment',
+    note:'A judgment. "Bad" is a put-down, not a description. You can speak up.' },
+  { s:'A classmate says: "You\'re too loud."',             best:'tricky',
+    note:'This one could go either way. Said calmly, it is a comment (just noticing). Said meanly, it is a judgment. The <b>tone</b> tells you which.' },
+];
+
+renderers.commentVsJudgment = () => {
+  state.flow = { door:'people', kind:'cvj', round:0, used:[], score:0 };
+  screen.innerHTML=`${topbar('peopleStart')}
+  <div class="pad fade">
+    <span class="step-tag">COMMENT OR JUDGMENT? 🗣️</span>
+    <div class="step-title">A really important difference</div>
+    <div class="duo" style="margin:6px auto">${buddy('',96)}</div>
+    <div class="card tip">
+      <p>🗣️ A <b>comment</b> is when someone just <i>notices</i> something. "Your shirt is purple." It is not good or bad — just true.</p>
+      <p>⚖️ A <b>judgment</b> is when someone decides good or bad about you. "Your shirt looks weird."</p>
+      <p>${escapeHtml(state.monsterName||'Grumble')} sometimes hears a comment and shouts "they are judging you!" — when really, they were just noticing.</p>
+    </div>
+    <div class="card"><p>We will look at 5 things someone might say. Your job: figure out which kind it is.</p></div>
+    <button class="btn" onclick="cvjRound()">Start practicing 🗣️</button>
+  </div>`;
+};
+
+function cvjRound(){
+  const f = state.flow;
+  if(!f.used) f.used = [];
+  if(f.round >= 5){ cvjDone(); return; }
+  let pool = COMMENT_SCENES.map((_,i)=>i).filter(i=>!f.used.includes(i));
+  if(!pool.length){ pool = COMMENT_SCENES.map((_,i)=>i); f.used = []; }
+  const idx = pool[Math.floor(Math.random()*pool.length)];
+  f.used.push(idx); f.scene = idx;
+  const sc = COMMENT_SCENES[idx];
+  screen.innerHTML=`${topbar(null)}
+  <div class="pad fade">
+    <span class="step-tag">WHICH IS IT?</span>
+    <div style="font-weight:800;color:var(--orchid);font-size:13px;margin-top:8px">Round ${f.round+1} of 5</div>
+    <div class="bar" style="margin-bottom:8px"><i style="width:${(f.round/5)*100}%"></i></div>
+    <div class="card"><h3 style="margin:0">Someone says:</h3>
+      <p style="font-size:16px;color:var(--ink);margin-top:6px">${escapeHtml(sc.s)}</p></div>
+    <div class="step-sub" style="margin-top:12px">Is that a comment or a judgment? Tap your best guess.</div>
+    <button class="choice" onclick="cvjPick('comment')"><span class="ce">🗣️</span>A comment — just noticing</button>
+    <button class="choice" onclick="cvjPick('aboutother')"><span class="ce">↔️</span>A comment, but about someone else (not me)</button>
+    <button class="choice" onclick="cvjPick('question')"><span class="ce">❓</span>Actually a question, not a judgment</button>
+    <button class="choice" onclick="cvjPick('tricky')"><span class="ce">🎭</span>Hard to tell — depends on tone</button>
+    <button class="choice" onclick="cvjPick('judgment')"><span class="ce">⚖️</span>A judgment — they were being unkind</button>
+  </div>`;
+}
+
+function cvjPick(pick){
+  const f = state.flow;
+  const sc = COMMENT_SCENES[f.scene];
+  const mn = escapeHtml(state.monsterName||'Grumble');
+  const correct = pick === sc.best;
+  if(correct) f.score = (f.score||0) + 1;
+  f.round++;
+
+  let head, color;
+  if(correct){
+    head = 'Great reading! 🎯'; color = 'var(--mint)';
+  } else if(pick === 'judgment' && sc.best !== 'judgment'){
+    head = 'That is okay to feel.'; color = 'var(--orchid)';
+  } else {
+    head = 'Good thinking — and notice this.'; color = 'var(--orchid)';
+  }
+
+  const note = sc.note.replace(/\$\{MN\}/g, mn);
+
+  screen.innerHTML=`${topbar(null)}
+  <div class="pad fade">
+    <span class="step-tag">LET'S LOOK CLOSER</span>
+    <div class="step-title" style="color:${color}">${head}</div>
+    <div class="card"><p style="font-size:14.5px">"${escapeHtml(sc.s)}"</p>
+      <p style="font-size:14.5px;margin-top:8px">${note}</p></div>
+    ${sc.best==='judgment' ? `
+      <div class="card tip"><p>💪 When it really IS a judgment, you can speak up — kind and strong. Want to practice?</p>
+        <button class="btn" style="margin-top:8px" onclick="go('boundaryPractice')">Practice speaking up 💪</button>
+        <button class="btn ghost" style="margin-top:6px" onclick="cvjRound()">Next one ›</button>
+      </div>` :
+      `<button class="btn" onclick="cvjRound()">Next one ›</button>`}
+  </div>`;
+}
+
+function cvjDone(){
+  const f = state.flow;
+  const session = { mode:'reflect', thoughtful: f.score>=3 };
+  const pts = awardPoints(session);
+  recordUsageDay();
+  state.log.unshift({
+    ts: Date.now(), door:'people',
+    title:'Comment vs judgment practice', setoff:'', thought:'', tool:'Reading people',
+    rateBefore:null, rateAfter:null,
+    result:'sorted '+f.score+'/5 (comment vs judgment)', pts,
+  });
+  save();
+  screen.innerHTML=`<div class="celebrate" id="celeb">
+    <div style="font-size:26px">🗣️ 🎉 🗣️</div>
+    <h2>Practice done!</h2>
+    <div class="big">You practiced telling a <b>comment</b> from a <b>judgment</b> — one of the trickiest people-reading skills there is.</div>
+    <div class="duo" style="margin:8px 0">${buddy('happy',100)}</div>
+    <div class="big" style="color:var(--mint)">You got ${f.score} of 5 right 🌟</div>
+    <div class="pointpop">+${pts} ⭐</div>
+    <div class="big" style="margin-top:10px;font-size:13px">The more you practice, the more often you will hear a comment as a comment — not an attack.</div>
+    <button class="btn" style="max-width:260px" onclick="go('home')">Back home</button>
+    <button class="btn ghost" style="max-width:260px" onclick="go('commentVsJudgment')">Practice again 🗣️</button>
+  </div>`;
+  burst();
+}
 
 function peopleRound(){
   const f=state.flow;
@@ -1367,6 +1689,7 @@ renderers.boundaryPractice = () => {
     ${BOUNDARY_LINES.map(l=>`<button class="choice" onclick="pickOne(this)">
       <span class="ce">💪</span>${escapeHtml(l)}</button>`).join('')}
     <div class="card tip"><p>🌟 Strong does not mean loud or mean. A calm, clear voice is the strongest of all.</p></div>
+    <div class="card"><p style="font-size:13.5px"><b>Honest thing to know:</b> Sometimes when you speak up, the other person listens — and sometimes they don't. <b>That's their choice, not yours.</b> Saying it kindly and clearly is the part that is up to you. That's the win, no matter how they react.</p></div>
     <button class="btn go" onclick="peopleRound()">I practiced it ✅</button>
   </div>`;
 };
@@ -1446,9 +1769,23 @@ renderers.celebrate = (d) => {
   const e=d.entry;
   const hasPair=e.rateBefore!=null && e.rateAfter!=null;
   const dropped=hasPair && e.rateAfter<e.rateBefore;
+  const calm = e.rateAfter!=null && e.rateAfter<4;   // below 4 -> offer calm menu
+  // Specific cheerleader line tied to what she just did
+  let specific = '';
+  if(hasPair && dropped){
+    specific = `You came to me at a ${e.rateBefore}, and you came down to a ${e.rateAfter}. That took real work.`;
+  } else if(e.door==='before'){
+    specific = `You caught a warning sign before it got big. That is the thoughtful you in action.`;
+  } else if(e.door==='brave'){
+    specific = `You did a brave step today. That is yours, and no one can take it from you.`;
+  } else if(e.door==='after'){
+    specific = `You looked back at a hard moment instead of avoiding it. That takes real courage.`;
+  } else {
+    specific = `You showed up. That is the work, and you did it.`;
+  }
   const labels={before:'You caught a warning sign early!',during:'You used the app while angry!',
     after: d.entry.result&&/thought/i.test(d.entry.result)?'Thoughtful reflection! 🌟':'You looked back and reflected!',
-    brave:'You took a brave step!'};
+    brave:'You took a brave step!',people:'You practiced reading people!'};
   const emojis={before:'🌤️',during:'🔥',after:'📖',brave:'🦁',people:'🧩'};
   screen.innerHTML=`<div class="celebrate" id="celeb">
     <div style="font-size:26px">${emojis[e.door]} 🎉 ${emojis[e.door]}</div>
@@ -1458,12 +1795,23 @@ renderers.celebrate = (d) => {
       <div class="ratebubble" style="background:${feelWord(e.rateBefore)[1]}">${e.rateBefore}</div>
       <span class="arrow">➜</span>
       <div class="ratebubble" style="background:${feelWord(e.rateAfter)[1]}">${e.rateAfter}</div></div>
-      <div class="big" style="${dropped?'color:var(--mint)':''}">
-        ${dropped?'Your feeling got smaller! 📉':'You showed up and did the work. That is the win. 💜'}</div>`:''}
+      <div class="big" style="${dropped?'color:var(--mint)':''};font-size:15px">${escapeHtml(specific)}</div>`
+      :`<div class="big" style="font-size:15px">${escapeHtml(specific)}</div>`}
     <div class="pointpop">+${d.pts} ⭐</div>
-    <div class="big" style="margin-top:10px;font-size:13px">${escapeHtml(state.monsterName)} the anger monster got smaller — you and Bubble are helping it calm down!</div>
-    <button class="btn" style="max-width:260px" onclick="go('home')">Back home</button>
-    <button class="btn ghost" style="max-width:260px" onclick="go('progress')">See my wins 🏆</button>
+    <div class="big" style="margin-top:10px;font-size:13px">${escapeHtml(state.monsterName)} got smaller — you and Bubble are helping it calm down!</div>
+    ${calm ? `
+      <div class="card" style="margin-top:16px;background:#eaf4ec;text-align:left">
+        <h3 style="margin:0;color:var(--grape-deep);text-align:center">You are in a good place 🌟</h3>
+        <p style="text-align:center;margin:6px 0 10px">Want to do something good with this calm?</p>
+        <button class="choice" onclick="go('gratitude')"><span class="ce">🌻</span>Gratitude</button>
+        <button class="choice" onclick="go('peopleStart')"><span class="ce">🧩</span>People Practice</button>
+        <button class="choice" onclick="go('rewards')"><span class="ce">🎁</span>Look at my rewards</button>
+        <button class="choice" onclick="go('closet')"><span class="ce">🎩</span>Go to my closet</button>
+      </div>
+      <button class="btn ghost" style="max-width:260px;margin-top:10px" onclick="go('home')">Just back home</button>`
+    : `
+      <button class="btn" style="max-width:260px" onclick="go('home')">Back home</button>
+      <button class="btn ghost" style="max-width:260px" onclick="go('progress')">See my wins 🏆</button>`}
   </div>`;
   burst();
 };
@@ -1617,6 +1965,181 @@ function claimReward(rewardId){
     <div class="big" style="font-size:13px;margin-top:6px">Your ${r.cost} points are held for now. They go back if a grown-up can't say yes.</div>
     <button class="btn" style="max-width:260px" onclick="go('rewards')">Back to rewards</button>
     <button class="btn ghost" style="max-width:260px" onclick="go('home')">Home</button>
+  </div>`;
+  burst();
+}
+
+/* =============================================================
+   GRATITUDE & FAITH — gentle daily noticing + "I'm loved" reminders
+============================================================= */
+
+/* Gratitude chip starters — mix of questions, I-statements, and noticing.
+   Pre-built so she has something to lean on if blank. */
+const GRATITUDE_CHIPS = [
+  'What made you smile today?',
+  'Who was nice to you today?',
+  'What was the best part of today?',
+  'I had fun when...',
+  'I felt happy when...',
+  'I liked it when...',
+  'Today I got to...',
+  'I\'m glad about...',
+  'Today I noticed...',
+  'A good thing today was...',
+];
+
+/* Faith messages — comfort + identity + made-on-purpose, all woven together.
+   Each item: { msg, verse }. Easy to add more later — just append. */
+const FAITH_MESSAGES = [
+  { msg:'Hey, Adelyn — even on hard days, Jesus loves you. Always. Nothing you do or do not do changes that.',
+    verse:'"The Lord is near to the brokenhearted." — Psalm 34:18' },
+  { msg:'You don\'t have to be happy, or grateful, or anything special. You are loved exactly how you are right now.',
+    verse:'"I have loved you with an everlasting love." — Jeremiah 31:3' },
+  { msg:'On rough days, God is even closer. He does not pull away when you are sad — he stays.',
+    verse:'"He will never leave you nor forsake you." — Deuteronomy 31:6' },
+  { msg:'You are precious. Not because of what you did — just because you are you.',
+    verse:'"You are precious in my sight, and I love you." — Isaiah 43:4' },
+  { msg:'It is okay to not be okay. Jesus is right here with you.',
+    verse:'"Cast all your anxiety on him, because he cares for you." — 1 Peter 5:7' },
+  { msg:'God made you on purpose. He is glad you are here today, even if today was hard.',
+    verse:'"You are fearfully and wonderfully made." — Psalm 139:14' },
+  /* Identity / made-on-purpose */
+  { msg:'You were made on purpose. Every part of you — even the parts that feel different — Jesus put there on purpose. You are not a mistake. You are a plan.',
+    verse:'"For we are God\'s handiwork, created in Christ Jesus to do good works." — Ephesians 2:10' },
+  { msg:'The world needs YOU. Not a copy of someone else. You. Jesus made you different for a reason.',
+    verse:'"Before I formed you in the womb I knew you." — Jeremiah 1:5' },
+  { msg:'You are not "too much" or "not enough." You are exactly who you were made to be.',
+    verse:'"You are fearfully and wonderfully made." — Psalm 139:14' },
+  { msg:'The things that feel hard about being you? Those are going to make you strong. They will help you understand other kids who feel the same way. That is a gift.',
+    verse:'"You are God\'s chosen people, holy and dearly loved." — Colossians 3:12' },
+  { msg:'When you feel like people are picking on you — remember: Jesus picked YOU. He made you the way you are because the world needs exactly that.',
+    verse:'"You are precious in my sight, and I love you." — Isaiah 43:4' },
+  { msg:'You do not have to be like anyone else. Being you is the whole point. Jesus is so glad you are you.',
+    verse:'"For we are God\'s handiwork." — Ephesians 2:10' },
+  { msg:'Your feelings are big sometimes — and that is because you care big. That is a beautiful thing, even when it is hard.',
+    verse:'"The Lord is near to the brokenhearted." — Psalm 34:18' },
+];
+
+renderers.gratitude = () => {
+  screen.innerHTML=`${topbar('home')}
+  <div class="pad fade">
+    <span class="step-tag">GRATITUDE 🌻</span>
+    <div class="step-title">A small good thing</div>
+    <div class="duo" style="margin:6px auto">${buddy('',104)}</div>
+    <div class="card"><p>Just one good thing — that is all. Or, if today was hard, pick the other door.</p></div>
+    <button class="door before" style="margin-top:8px" onclick="go('gratitudeWrite')">
+      <div class="emoji">🌻</div>
+      <div><div class="dt">Tell me about a good part of your day</div><div class="ds">One small thing</div></div>
+    </button>
+    <button class="door after" style="margin-top:10px" onclick="go('faithMoment')">
+      <div class="emoji">💛</div>
+      <div><div class="dt">I need a reminder I'm loved</div><div class="ds">A quiet moment</div></div>
+    </button>
+    ${(state.gratitudes && state.gratitudes.length) ? `
+      <div class="door-q" style="margin-top:18px">Things you have noticed</div>
+      ${state.gratitudes.slice(0,5).map(g => g.type==='faith'
+        ? `<div class="card" style="background:#fff8e1;display:flex;gap:10px;align-items:center">
+            <div style="font-size:22px">💛</div>
+            <div style="flex:1;font-size:13px;color:var(--ink-soft);font-weight:700">${escapeHtml(new Date(g.ts).toLocaleDateString())} · Amen 💜</div>
+          </div>`
+        : `<div class="card" style="background:#fffaef">
+            <div style="font-size:11px;color:var(--ink-soft);font-weight:800">${escapeHtml(new Date(g.ts).toLocaleDateString())}</div>
+            <div style="font-size:14.5px;color:var(--ink);font-weight:600;margin-top:3px">🌻 ${escapeHtml(g.text)}</div>
+          </div>`).join('')}` : ''}
+  </div>`;
+};
+
+renderers.gratitudeWrite = () => {
+  screen.innerHTML=`${topbar('gratitude')}
+  <div class="pad fade">
+    <span class="step-tag">A GOOD THING 🌻</span>
+    <div class="step-title">Tell me about a good part of your day</div>
+    <div class="duo" style="margin:4px auto">${buddy('',96)}</div>
+    <div class="step-sub">Just one thing. Big or small — they all count. Type it, or tap a starter below to help.</div>
+    <textarea id="gtext" placeholder="Type your good thing here..." style="min-height:110px;margin-top:8px"></textarea>
+    <div class="step-sub" style="margin-top:14px">Need a starter? Tap one to begin:</div>
+    <div class="chipwrap">
+      ${GRATITUDE_CHIPS.map(c => `<button class="chip" onclick="gratitudeStarter(${JSON.stringify(c).replace(/"/g,'&quot;')})">
+        <span>${escapeHtml(c)}</span></button>`).join('')}
+    </div>
+    <button class="btn" onclick="gratitudeSave()">Save my good thing 🌻</button>
+    <button class="btn ghost" onclick="gratitudeEmpty()">I can't think of one today</button>
+    <div class="skipnote">No pressure. Some days are easier than others — both are okay. 💜</div>
+  </div>`;
+};
+function gratitudeStarter(text){
+  const box=$('gtext'); if(!box) return;
+  // prepend or set
+  if(!box.value.trim()){ box.value = text + ' '; }
+  else { box.value = box.value.trim() + '\n' + text + ' '; }
+  box.focus();
+  // place cursor at end
+  box.selectionStart = box.selectionEnd = box.value.length;
+}
+function gratitudeSave(){
+  const box=$('gtext'); const text = box ? box.value.trim() : '';
+  if(!text){ gratitudeEmpty(); return; }
+  if(!state.gratitudes) state.gratitudes = [];
+  state.gratitudes.unshift({ ts: Date.now(), text, type:'gratitude' });
+  // earn 1 point — modest, not a quiz reward
+  state.points += 1;
+  state.totalPoints += 1;
+  save();
+  // celebrate gently
+  screen.innerHTML=`<div class="celebrate" id="celeb">
+    <div style="font-size:30px">🌻 ✨ 🌻</div>
+    <h2 style="color:var(--grape-deep)">Thank you for sharing.</h2>
+    <div class="duo" style="margin:8px 0">${buddy('happy',104)}</div>
+    <div class="big" style="font-size:16px;color:var(--ink)">"${escapeHtml(text)}"</div>
+    <div class="big" style="margin-top:10px;font-size:14px">Noticing good things is its own kind of brave. 💜</div>
+    <div class="pointpop">+1 ⭐</div>
+    <button class="btn" style="max-width:260px" onclick="go('home')">Back home</button>
+    <button class="btn ghost" style="max-width:260px" onclick="go('gratitude')">Back to gratitude</button>
+  </div>`;
+  burst();
+}
+function gratitudeEmpty(){
+  screen.innerHTML=`${topbar('gratitude')}
+  <div class="pad fade" style="text-align:center">
+    <span class="step-tag">THAT'S OKAY 💜</span>
+    <div class="step-title" style="margin-top:14px">Some days are like that.</div>
+    <div class="duo" style="margin:14px auto">${buddy('',110)}</div>
+    <div class="card"><p style="font-size:15px">Just coming here was a good thing. You do not have to find one today.</p></div>
+    <div class="card tip"><p>💛 If you want, you can tap "I need a reminder I'm loved" instead. No pressure either way.</p></div>
+    <button class="btn" onclick="go('faithMoment')">A reminder I'm loved 💛</button>
+    <button class="btn ghost" onclick="go('home')">Back home</button>
+  </div>`;
+}
+
+renderers.faithMoment = () => {
+  // pick a random message from the bank
+  const idx = Math.floor(Math.random() * FAITH_MESSAGES.length);
+  const m = FAITH_MESSAGES[idx];
+  screen.innerHTML=`${topbar('gratitude')}
+  <div class="pad fade" style="text-align:center">
+    <span class="step-tag">A QUIET MOMENT 💛</span>
+    <div class="duo" style="margin:16px auto 8px">${buddy('',120)}</div>
+    <div class="card" style="background:#fff8e1;text-align:left">
+      <p style="font-size:16px;color:var(--ink);font-weight:600;line-height:1.55">${escapeHtml(m.msg)}</p>
+      <p style="font-size:13.5px;color:#8b6e3a;font-style:italic;font-weight:600;margin-top:12px;text-align:center">${escapeHtml(m.verse)}</p>
+    </div>
+    <button class="btn" onclick="faithAmen()">Amen 💜</button>
+  </div>`;
+};
+function faithAmen(){
+  if(!state.gratitudes) state.gratitudes = [];
+  state.gratitudes.unshift({ ts: Date.now(), type:'faith' });
+  state.points += 1;
+  state.totalPoints += 1;
+  save();
+  screen.innerHTML=`<div class="celebrate" id="celeb">
+    <div style="font-size:30px">💛 ✨ 💛</div>
+    <h2 style="color:var(--grape-deep)">Amen.</h2>
+    <div class="duo" style="margin:14px 0">${buddy('happy',110)}</div>
+    <div class="big" style="font-size:15px">You are loved. Always. 💜</div>
+    <div class="pointpop">+1 ⭐</div>
+    <button class="btn" style="max-width:260px" onclick="go('home')">Back home</button>
+    <button class="btn ghost" style="max-width:260px" onclick="go('gratitude')">Back to gratitude</button>
   </div>`;
   burst();
 }

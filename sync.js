@@ -106,6 +106,17 @@ const Sync = (() => {
     out.customVerses  = unionStrings(localS.customVerses,  cloudS.customVerses);
     out.parentNotes   = dedupeNotes([...(localS.parentNotes||[]), ...(cloudS.parentNotes||[])]);
 
+    // gratitudes: union by ts (each entry is unique-per-write)
+    {
+      const all = [...(localS.gratitudes||[]), ...(cloudS.gratitudes||[])];
+      const seen = new Set();
+      out.gratitudes = all.filter(g => {
+        const k = (g.ts||'') + '|' + (g.type||'') + '|' + (g.text||'');
+        if(seen.has(k)) return false;
+        seen.add(k); return true;
+      }).sort((a,b)=>(b.ts||0)-(a.ts||0));
+    }
+
     // unlocked items: union — once unlocked, stays unlocked
     out.owned = { ...(localS.owned||{}), ...(cloudS.owned||{}) };
 
@@ -121,11 +132,28 @@ const Sync = (() => {
   }
 
   function dedupeLog(list){
-    const seen = new Set(), out = [];
+    const seen = new Map(), out = [];
     for(const e of list){
       const key = (e.ts||e.date||'') + '|' + (e.door||e.type||'') + '|' + (e.result||e.title||'');
-      if(seen.has(key)) continue;
-      seen.add(key); out.push(e);
+      if(seen.has(key)){
+        // merge parent notes (and notes/doover) from this duplicate into the kept one
+        const kept = seen.get(key);
+        const incoming = (e.parentNotes||[]);
+        const existing = (kept.parentNotes||[]);
+        const noteKey = n => (n.ts||'') + '|' + (n.text||'');
+        const all = [...existing, ...incoming];
+        const seenNotes = new Set();
+        kept.parentNotes = all.filter(n => {
+          const k = noteKey(n);
+          if(seenNotes.has(k)) return false;
+          seenNotes.add(k); return true;
+        });
+        // prefer non-empty notes/doover if one side has them and the other doesn't
+        if(!kept.notes && e.notes) kept.notes = e.notes;
+        if(!kept.doover && e.doover) kept.doover = e.doover;
+        continue;
+      }
+      seen.set(key, e); out.push(e);
     }
     return out.sort((a,b)=>(b.ts||0)-(a.ts||0));
   }
