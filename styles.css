@@ -292,6 +292,8 @@
   /* People Practice door */
   .door.people{background:linear-gradient(135deg,#f0a93f,#e0852a); box-shadow:0 7px 0 #b56a1a;}
   .door.people:active{box-shadow:0 2px 0 #b56a1a;}
+  .door.gratitude{background:linear-gradient(135deg,#f6c270,#e09a3a); box-shadow:0 7px 0 #b87520; color:#fff;}
+  .door.gratitude:active{box-shadow:0 2px 0 #b87520;}
 
   /* Big "during" tool buttons — designed for a flooded kid */
   .bigtool{
@@ -309,3 +311,15 @@
   .bigtool.water{background:linear-gradient(135deg,#3fd6a8,#2bbf93);}
   .bigtool.helpme{background:linear-gradient(135deg,#c861d9,#8b3fb5);}
   .bigtool.helpme .bt-t{font-size:18px;}
+
+  /* "Tell Bubble what happened" button — prominent on home, warm & inviting */
+  .tellbubble{
+    width:100%; margin-top:14px; padding:14px 16px;
+    border:none; border-radius:18px; cursor:pointer;
+    background:linear-gradient(135deg,#a86fc8,#7b3ea8); color:#fff;
+    display:flex; gap:10px; align-items:center;
+    box-shadow:0 6px 0 #5e2b86;
+    transition:transform .08s, box-shadow .08s;
+    font-family:'Nunito',sans-serif;
+  }
+  .tellbubble:active{transform:translateY(3px); box-shadow:0 3px 0 #5e2b86;}

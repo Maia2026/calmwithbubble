@@ -48,6 +48,9 @@ function freshState(){
     pendingClaims: [],        // {claimId, rewardId, name, cost, ts} awaiting parent approval
     earnedRewards: [],        // {rewardId, name, ts} for history
     gratitudes: [],           // {ts, text, chip, type:'gratitude'|'faith'} entries
+    therapistEmail: '',       // parent-saved address for emailing reports
+    tellBubbles: [],          // {ts, path, text, controlled, type:'tellbubble'} entries
+    detectiveEntries: [],     // {ts, isPerson, answers:{q1..q5: text}, engagedCount} entries
     customMantras: [],
     customVerses: [],
     parentNotes: [],
@@ -334,6 +337,51 @@ function buildReport(kind){
       return `<table><tr><th>When</th><th>Type</th><th>What Adelyn wrote / did</th></tr>${rows}</table>`;
     })()}
 
+    <h2>Thought-detective investigations</h2>
+    <p style="font-size:12px;color:#666">When Adelyn worked through a thought using the 5-question framework. Her own writing for each question is here — skipped questions are blank.</p>
+    ${(()=>{
+      const dets = (state.detectiveEntries||[]).filter(d => (d.ts||0) >= start)
+        .sort((a,b)=>(b.ts||0)-(a.ts||0));
+      if(!dets.length) return '<p>No detective investigations in this period.</p>';
+      const qTitles = ['How big is it?','Is it true?','Is it bad?','Can she control it?','Comment or judgment?'];
+      return dets.map(d => {
+        const a = d.answers || {};
+        const thoughtLine = d.thought ? `<p style="margin:4px 0;font-size:13px"><b>The thought:</b> "${escapeHtml(d.thought)}"</p>` : '';
+        const personLine = `<p style="margin:4px 0;font-size:12px;color:#666">About a person: ${d.isPerson ? 'Yes' : 'No'} · Engaged: ${d.engagedCount||0} of ${d.isPerson===false?4:5} questions</p>`;
+        const rows = qTitles.map((title,i) => {
+          const q = i+1;
+          if(q === 5 && d.isPerson === false) return '';   // Q5 was skipped by design
+          const ans = a[q];
+          return `<tr><td style="width:30%"><b>Q${q}.</b> ${escapeHtml(title)}</td>
+            <td>${ans ? escapeHtml(ans) : '<i style="color:#999">(skipped)</i>'}</td></tr>`;
+        }).join('');
+        return `<div style="border:1px solid #ddd;border-radius:6px;padding:10px;margin-top:10px">
+          <p style="margin:0;font-weight:bold">${escapeHtml(new Date(d.ts).toLocaleString())}</p>
+          ${thoughtLine}
+          ${personLine}
+          <table style="margin-top:6px">${rows}</table>
+        </div>`;
+      }).join('');
+    })()}
+
+    <h2>What Adelyn told Bubble</h2>
+    <p style="font-size:12px;color:#666">Times Adelyn came to Bubble to share something — what didn't work, friend troubles, or just venting. Includes what she identified as the part she controlled.</p>
+    ${(()=>{
+      const tbs = (state.tellBubbles||[]).filter(t => (t.ts||0) >= start)
+        .sort((a,b)=>(b.ts||0)-(a.ts||0));
+      if(!tbs.length) return '<p>No Tell-Bubble entries in this period.</p>';
+      const pathName = { didntwork:"Something I tried didn't work", friend:"Trouble with a friend", else:"Something else" };
+      const rows = tbs.map(t => {
+        const ctrl = (t.controlled && t.controlled.length) ? t.controlled.join(', ') : '—';
+        return `<tr>
+          <td>${escapeHtml(new Date(t.ts).toLocaleString())}</td>
+          <td>${escapeHtml(pathName[t.path]||t.path||'—')}</td>
+          <td>${escapeHtml(t.text||'')}</td>
+          <td>${escapeHtml(ctrl)}</td></tr>`;
+      }).join('');
+      return `<table><tr><th>When</th><th>What about</th><th>What Adelyn wrote</th><th>What she said she controlled</th></tr>${rows}</table>`;
+    })()}
+
     <h2>Parent observations</h2>
     <p style="font-size:12px;color:#666">Context added by parent in the parent zone. Hidden from Adelyn.</p>
     ${parentNoteList
@@ -359,13 +407,39 @@ function buildReport(kind){
     <p class="muted" style="margin-top:20px">This is home-tracked data entered by a child and parent.
        It is meant to support — not replace — clinical assessment. All values are self-reported
        in the moment unless noted as estimated.</p>
-    <button onclick="window.print()">Print / Save as PDF</button>
+    <div style="margin-top:18px;display:flex;gap:10px;flex-wrap:wrap">
+      <button onclick="window.print()" style="padding:10px 18px;font-size:15px;cursor:pointer">📄 Print / Save as PDF</button>
+      <button onclick="window.__emailReport()" style="padding:10px 18px;font-size:15px;cursor:pointer;background:#8b3fb5;color:#fff;border:none;border-radius:6px">📧 Email to therapist</button>
+      <button onclick="window.close()" style="padding:10px 18px;font-size:15px;cursor:pointer;margin-left:auto">✕ Close report</button>
+    </div>
+    <script>
+      window.__emailReport = function(){
+        var to = '__THERAPIST_EMAIL__';
+        var subject = '__REPORT_SUBJECT__';
+        var body = "Hi,\\n\\nHere is Adelyn's Bubble report for __REPORT_RANGE__.\\n\\nThe report is saved as a PDF — please see attached.\\n\\nThank you!";
+        if(!to){ alert("No therapist email is saved yet. Add one in the parent zone (Settings)."); return; }
+        var href = 'mailto:' + encodeURIComponent(to)
+          + '?subject=' + encodeURIComponent(subject)
+          + '&body=' + encodeURIComponent(body);
+        window.location.href = href;
+      };
+    </script>
   </body></html>`;
 }
 function openReport(kind){
-  const html = buildReport(kind);
+  let html = buildReport(kind);
   state.lastReportDate = Date.now();     // System 4: "since last report" tracking
   save();
+  // Substitute the saved therapist email and a specific subject into the report HTML
+  const rangeLabel = { week:'This Week', month:'This Month',
+                       since:'Since Last Report', all:'All Time' }[kind] || 'All Time';
+  const today = new Date().toLocaleDateString();
+  const subject = `Adelyn's Bubble Report — ${rangeLabel} (${today})`;
+  const therapistEmail = (state.therapistEmail || '').trim();
+  html = html
+    .replace('__THERAPIST_EMAIL__', therapistEmail.replace(/'/g, "\\'"))
+    .replace('__REPORT_SUBJECT__', subject.replace(/'/g, "\\'"))
+    .replace('__REPORT_RANGE__', rangeLabel.replace(/'/g, "\\'"));
   const w = window.open('', '_blank');
   if(w){ w.document.write(html); w.document.close(); }
   else { alert('Please allow pop-ups to view the report.'); }
@@ -382,17 +456,41 @@ async function boot(){
   if(!PIN_STORE.has()) PIN_STORE.set(DEFAULT_PIN);   // Lesson 10/11
   Sync.saveLocal(state);
 
-  // live updates from other devices
+  // live updates from other devices — only redraw if user-visible data actually changed
   if(Sync.configured()){
     Sync.startPolling(cloud => {
+      const beforeFp = stateFingerprint();
       state = migrate(Sync.merge(state, cloud));
       Sync.saveLocal(state);
-      if(currentView === 'home' || currentView === 'progress') go(currentView);
+      const afterFp = stateFingerprint();
+      // Only re-render if something user-visible changed.
+      // This prevents Bubble's greeting from re-rolling every 15 seconds
+      // while Adelyn is reading the home screen.
+      if(beforeFp !== afterFp && (currentView === 'home' || currentView === 'progress')){
+        go(currentView, lastData, {back:true});  // back:true so navStack isn't disturbed
+      }
       updateSyncDot();
     });
   }
   updateSyncDot();
   go('home');
+}
+/* Snapshot of user-visible state — used to decide if a polling redraw is needed */
+function stateFingerprint(){
+  if(!state) return '';
+  const note = (state.parentNotes && state.parentNotes[0]) || {};
+  return [
+    state.points,
+    state.totalPoints,
+    (state.log||[]).length,
+    (state.gratitudes||[]).length,
+    (state.earnedRewards||[]).length,
+    (state.pendingClaims||[]).length,
+    state.monsterShrink,
+    state.streakCount,
+    note.ts || 0, !!note.dismissed,
+    state.wearing||'',
+  ].join('|');
 }
 function updateSyncDot(){
   const d = document.getElementById('syncdot');
@@ -410,8 +508,12 @@ const screen = $('screen');
 let currentView = 'home';
 let flow = {};   // per-session working data
 let navStack = []; // history of {view, data} for back button
+let cachedGreeting = null;  // sticky per home visit — set on entry, cleared on leave
 
 function go(view, data, opts){
+  // clear cached greeting when we enter home from somewhere else (fresh visit)
+  // (polling redraws call go('home') too but currentView is already 'home', so cache is kept)
+  if(view === 'home' && currentView !== 'home') cachedGreeting = null;
   // push current onto stack unless this is a back-nav or going home (reset)
   if(!opts || !opts.back){
     if(view === 'home'){ navStack = []; }
@@ -631,8 +733,10 @@ renderers.home = () => {
   const u = usageCounts();
   const note = (state.parentNotes && state.parentNotes.length && !state.parentNotes[0].dismissed)
     ? state.parentNotes[0] : null;
-  // Specific, warm greeting tied to her actual activity when possible
-  const greeting = bubbleGreeting(streak, u);
+  // Specific, warm greeting tied to her actual activity — cached per home visit
+  // so polling redraws don't make Bubble change what she's saying mid-read.
+  if(!cachedGreeting) cachedGreeting = bubbleGreeting(streak, u);
+  const greeting = cachedGreeting;
   screen.innerHTML = `
   <div style="display:flex;align-items:center;gap:10px;padding:14px 18px 6px">
     <div class="streakpill" title="day streak">🔥 ${streak}</div>
@@ -643,6 +747,13 @@ renderers.home = () => {
     <div class="hello">Hi, Adelyn! 👋</div></div>
     <div class="duo" style="margin:4px auto 0">${buddy('',124)}</div>
     <div class="speech">${greeting}</div>
+    <button class="tellbubble" onclick="go('tellBubble')">
+      <span style="font-size:22px">💜</span>
+      <span style="flex:1;text-align:left">
+        <span style="font-weight:800;font-size:15px">Tell Bubble what happened</span>
+        <span style="display:block;font-weight:600;font-size:12px;opacity:0.85">Share something — good or hard</span>
+      </span>
+    </button>
     ${note?`<div class="parentnote" onclick="dismissNote()">
       <div style="font-weight:800;font-size:12px;color:var(--grape);letter-spacing:.5px">💌 NEW NOTE FROM MOM/DAD</div>
       <div style="font-weight:700;font-size:15px;color:var(--ink);margin-top:3px">${escapeHtml(note.text)}</div>
@@ -653,7 +764,7 @@ renderers.home = () => {
       <div class="statcard"><div class="statnum">${u.week}</div><div class="statlbl">THIS WEEK</div></div>
       <div class="statcard"><div class="statnum">${u.all}</div><div class="statlbl">ALL TIME</div></div>
     </div>
-    <div class="door-q">Pick a door 🚪</div>
+    <div style="height:10px"></div>
     <button class="door before" onclick="go('beforePick')"><div class="emoji">🌤️</div>
       <div><div class="dt">I feel it coming</div><div class="ds">I notice a warning sign</div></div></button>
     <button class="door during" onclick="go('duringStart')"><div class="emoji">🔥</div>
@@ -664,8 +775,9 @@ renderers.home = () => {
       <div><div class="dt">Be brave</div><div class="ds">Something feels scary</div></div></button>
     <button class="door people" onclick="go('peopleStart')"><div class="emoji">🧩</div>
       <div><div class="dt">People practice</div><div class="ds">Get better at reading people</div></div></button>
+    <button class="door gratitude" onclick="go('gratitude')"><div class="emoji">🌻</div>
+      <div><div class="dt">Gratitude</div><div class="ds">Notice a good thing</div></div></button>
     <div class="minirow">
-      <button class="minicard" onclick="go('gratitude')"><div class="mi">🌻</div><div class="ml">Gratitude</div></button>
       <button class="minicard" onclick="go('progress')"><div class="mi">🏆</div><div class="ml">My Wins</div></button>
       <button class="minicard" onclick="go('rewards')"><div class="mi">🎁</div><div class="ml">Rewards</div></button>
       <button class="minicard" onclick="go('closet')"><div class="mi">🎩</div><div class="ml">Closet</div></button>
@@ -1046,155 +1158,169 @@ function saveVerseMaybe(){
   if(b && b.value.trim().length>1){ state.customVerses.push(b.value.trim()); save(); }
 }
 /* =============================================================
-   THOUGHT DETECTIVE — 5-question walkthrough (therapist framework)
-   1. How big is the problem? (size check)
-   2. Is it actually real/true? (truth check)
-   3. Is it actually a bad thing? (importance check)
-   4. Is it something you can control? (control check)
-   5. Comment or judgment? (intent check)
-   The order matters — each question sets up the next.
+   THOUGHT DETECTIVE — journaling-style 5-question walkthrough
+   Same therapist framework, but reframed as writing prompts rather
+   than quiz questions. Open writing box on every question with
+   feeling-word chip starters. Every question skippable. Points
+   scale with engagement: base 1 + thoughtful bonus if writing on 3+.
 ============================================================= */
+
+const DETECTIVE_CHIPS = {
+  1: ['Tiny problem','A small thing','Medium-sized','Big deal','Huge to me','Hard to tell'],
+  2: ['Totally true','Probably true','Not sure','Probably a guess','Probably not true','I would have to ask'],
+  3: ['Really bad','Annoying','Just different','Actually okay','Hard to say','I am still mad about it'],
+  4: ['I can do something','I can ask a grown-up','A little of it','Not really','None of it','I can change how I feel about it'],
+  5: ['Just a comment','About someone else','A question','Hard to tell','Yes — that was a judgment','Felt like an attack'],
+};
+
 renderers.detective = () => {
-  const th = flow.thought || 'that thought';
+  const th = flow.thought || '';
   const mn = escapeHtml(state.monsterName || 'the anger monster');
   // reset the detective session
-  flow.detective = { step:0, answers:{} };
+  flow.detective = { step:0, isPerson:null, answers:{} };
   screen.innerHTML=`${topbar(null)}
   <div class="pad fade">
     <span class="step-tag">THOUGHT DETECTIVE 🔍</span>
-    <div class="step-title">Let's investigate what ${mn} said</div>
-    <div class="card"><h3>What ${mn} is telling you:</h3><p style="font-size:15.5px">"${escapeHtml(th)}"</p></div>
+    <div class="step-title">Investigate what ${mn} said</div>
+    ${th ? `<div class="card"><h3 style="margin:0">What ${mn} is telling you:</h3><p style="font-size:15.5px;margin-top:6px">"${escapeHtml(th)}"</p></div>` : ''}
     <div class="card tip">
-      <p>🕵️ A detective doesn't just believe the first thing someone says — they check it out.</p>
-      <p>We are going to ask <b>5 questions</b> about what ${mn} is telling you. By the end, you will know if ${mn} is right, or if there is a better way to see it.</p>
+      <p>🕵️ A detective doesn't just believe the first thing they hear — they write down what they find.</p>
+      <p>I'll ask you <b>5 questions</b> about this. You can write a little or a lot. Skip any you want.</p>
+      <p style="margin-top:8px;font-size:13px;color:var(--ink-soft)"><b>One quick thing first:</b> Is this thought about another person — like a friend, classmate, or family member?</p>
     </div>
-    <button class="btn" onclick="detectiveStep(1)">Start the investigation 🔍</button>
+    <button class="choice" onclick="detectivePerson(true)"><span class="ce">👥</span>Yes — it's about a person</button>
+    <button class="choice" onclick="detectivePerson(false)"><span class="ce">🧠</span>No — it's not about a person</button>
   </div>`;
 };
 
-function detectiveStep(n){
-  const mn = escapeHtml(state.monsterName || 'the anger monster');
-  if(!flow.detective) flow.detective = { step:0, answers:{} };
-  flow.detective.step = n;
-
-  // progress bar (5 steps)
-  const prog = `<div class="bar" style="margin:8px 0 14px"><i style="width:${((n-1)/5)*100}%"></i></div>
-    <div style="font-weight:800;color:var(--orchid);font-size:13px">Question ${n} of 5</div>`;
-
-  if(n===1){
-    screen.innerHTML=`${topbar(null)}<div class="pad fade">
-      <span class="step-tag">Q1: HOW BIG IS IT?</span>${prog}
-      <div class="step-title">How big is this problem, really?</div>
-      <div class="step-sub">Sometimes ${mn} makes a small thing feel huge. Tap how big the problem is for real:</div>
-      <button class="choice" onclick="detectivePick(1,'tiny')"><span class="ce">🐜</span>Tiny — it will not matter in 5 minutes</button>
-      <button class="choice" onclick="detectivePick(1,'small')"><span class="ce">🌱</span>Small — not great, but not a big deal</button>
-      <button class="choice" onclick="detectivePick(1,'medium')"><span class="ce">⛅</span>Medium — it matters, but I can handle it</button>
-      <button class="choice" onclick="detectivePick(1,'big')"><span class="ce">⛈️</span>Big — this is a real problem</button>
-    </div>`;
-    return;
-  }
-  if(n===2){
-    const lastWord = flow.thought ? 'that thought' : 'what '+mn+' said';
-    screen.innerHTML=`${topbar(null)}<div class="pad fade">
-      <span class="step-tag">Q2: IS IT TRUE?</span>${prog}
-      <div class="step-title">Is ${lastWord} actually true?</div>
-      <div class="step-sub">${mn} is fast, but ${mn} sometimes guesses wrong. Do you actually <b>know</b> it is true?</div>
-      <button class="choice" onclick="detectivePick(2,'sure')"><span class="ce">✅</span>Yes — I am sure it is true</button>
-      <button class="choice" onclick="detectivePick(2,'maybe')"><span class="ce">🤔</span>Maybe — I am not really sure</button>
-      <button class="choice" onclick="detectivePick(2,'guess')"><span class="ce">💭</span>${mn} is guessing — I do not actually know</button>
-      <button class="choice" onclick="detectivePick(2,'false')"><span class="ce">❌</span>It is probably not true</button>
-    </div>`;
-    return;
-  }
-  if(n===3){
-    screen.innerHTML=`${topbar(null)}<div class="pad fade">
-      <span class="step-tag">Q3: IS IT A BAD THING?</span>${prog}
-      <div class="step-title">Even if it IS true... is it actually a bad thing?</div>
-      <div class="step-sub">Sometimes we get upset about something that is just <b>different</b> — not bad. What about this one?</div>
-      <button class="choice" onclick="detectivePick(3,'bad')"><span class="ce">😞</span>Yes — it really is a bad thing</button>
-      <button class="choice" onclick="detectivePick(3,'annoying')"><span class="ce">😒</span>Not bad, just annoying</button>
-      <button class="choice" onclick="detectivePick(3,'different')"><span class="ce">🤷</span>It is just different, not actually bad</button>
-      <button class="choice" onclick="detectivePick(3,'okay')"><span class="ce">🙂</span>Actually... it is okay</button>
-    </div>`;
-    return;
-  }
-  if(n===4){
-    screen.innerHTML=`${topbar(null)}<div class="pad fade">
-      <span class="step-tag">Q4: CAN YOU CONTROL IT?</span>${prog}
-      <div class="step-title">Is this something you can change?</div>
-      <div class="step-sub">If you CAN do something — what a relief! If you cannot, getting mad does not help. Which is it?</div>
-      <button class="choice" onclick="detectivePick(4,'me')"><span class="ce">💪</span>Yes — I can do something about it</button>
-      <button class="choice" onclick="detectivePick(4,'ask')"><span class="ce">🙋</span>I can ask a grown-up to help</button>
-      <button class="choice" onclick="detectivePick(4,'partly')"><span class="ce">🤏</span>A little — but not all of it</button>
-      <button class="choice" onclick="detectivePick(4,'no')"><span class="ce">🌬️</span>No — this one I cannot control</button>
-    </div>`;
-    return;
-  }
-  if(n===5){
-    screen.innerHTML=`${topbar(null)}<div class="pad fade">
-      <span class="step-tag">Q5: COMMENT OR JUDGMENT?</span>${prog}
-      <div class="step-title">Was someone making a <b>comment</b> or a <b>judgment</b>?</div>
-      <div class="card tip">
-        <p>🗣️ A <b>comment</b> is just <i>noticing something</i>. Like "your shirt is purple." Not good or bad — just true.</p>
-        <p>⚖️ A <b>judgment</b> is when someone decides good or bad about you. Like "your shirt looks weird."</p>
-        <p>${mn} sometimes hears a comment and shouts "they are judging you!" — when really, they were just noticing.</p>
-      </div>
-      <button class="choice" onclick="detectivePick(5,'comment')"><span class="ce">🗣️</span>A comment — just noticing, not judging</button>
-      <button class="choice" onclick="detectivePick(5,'aboutother')"><span class="ce">↔️</span>A comment about someone else, not me</button>
-      <button class="choice" onclick="detectivePick(5,'question')"><span class="ce">❓</span>Actually a question, not a judgment</button>
-      <button class="choice" onclick="detectivePick(5,'unsure')"><span class="ce">🤔</span>I cannot tell — could be either</button>
-      <button class="choice" onclick="detectivePick(5,'judgment')"><span class="ce">⚖️</span>A judgment — they were being unkind</button>
-      <button class="choice" onclick="detectivePick(5,'na')"><span class="ce">➖</span>This one is not about a person — skip</button>
-    </div>`;
-    return;
-  }
-  detectiveDone();
+function detectivePerson(isPerson){
+  if(!flow.detective) flow.detective = { step:0, isPerson:null, answers:{} };
+  flow.detective.isPerson = isPerson;
+  detectiveStep(1);
 }
 
-function detectivePick(step, val){
-  flow.detective.answers[step] = val;
-  if(step<5) detectiveStep(step+1);
-  else detectiveDone();
+const DETECTIVE_QUESTIONS = [
+  { n:1, tag:'Q1: HOW BIG IS IT?', title:'How big is this problem, really?',
+    why: 'Sometimes our anger monster makes a small thing feel huge. Write what you actually think the size is.',
+    placeholder: 'Is this a tiny thing, a medium thing, or a real big thing? Why?' },
+  { n:2, tag:'Q2: IS IT TRUE?', title:'Is what you\'re thinking actually true?',
+    why: 'Our anger monster is fast, but it sometimes guesses. Write what you actually know is true vs. what you\'re guessing.',
+    placeholder: 'What do you really know? What might be a guess?' },
+  { n:3, tag:'Q3: IS IT A BAD THING?', title:'Even if it IS true... is it actually bad?',
+    why: 'Sometimes something is just different — not bad. Write whether this is a real bad thing or just something you didn\'t like.',
+    placeholder: 'Is it actually a bad thing, or just not your favorite? What do you think?' },
+  { n:4, tag:'Q4: CAN YOU CONTROL IT?', title:'Is this something you can change?',
+    why: 'If you CAN do something — what a relief! If you can\'t, getting mad won\'t change it. Write what part is up to you.',
+    placeholder: 'What part of this is up to YOU? What part isn\'t?' },
+  { n:5, tag:'Q5: COMMENT OR JUDGMENT?', title:'Was it a comment or a judgment?',
+    why: 'A <b>comment</b> is just noticing ("your shirt is purple"). A <b>judgment</b> is deciding good or bad ("your shirt looks weird"). Write which one this was.',
+    placeholder: 'Was the person just noticing — or actually being unkind? How can you tell?' },
+];
+
+function detectiveStep(n){
+  if(!flow.detective) flow.detective = { step:0, isPerson:null, answers:{} };
+  flow.detective.step = n;
+
+  // Skip Q5 entirely if not about a person
+  if(n === 5 && flow.detective.isPerson === false){
+    detectiveDone();
+    return;
+  }
+  if(n > 5){ detectiveDone(); return; }
+
+  const q = DETECTIVE_QUESTIONS[n-1];
+  const totalSteps = flow.detective.isPerson === false ? 4 : 5;
+  const progress = ((n-1) / totalSteps) * 100;
+  const chips = DETECTIVE_CHIPS[n] || [];
+  const existing = (flow.detective.answers && flow.detective.answers[n]) || '';
+
+  screen.innerHTML=`${topbar(null)}
+  <div class="pad fade">
+    <span class="step-tag">${escapeHtml(q.tag)}</span>
+    <div class="bar" style="margin:8px 0 6px"><i style="width:${progress}%"></i></div>
+    <div style="font-weight:800;color:var(--orchid);font-size:13px">Question ${n} of ${totalSteps}</div>
+    <div class="step-title" style="margin-top:8px">${escapeHtml(q.title)}</div>
+    <div class="card tip"><p>${q.why}</p></div>
+    <textarea id="dtext" placeholder="${escapeAttr(q.placeholder)}" style="min-height:110px;margin-top:8px">${escapeHtml(existing)}</textarea>
+    <div class="step-sub" style="margin-top:10px">Stuck? Tap a starter to get going:</div>
+    <div class="chipwrap">
+      ${chips.map(c => `<button class="chip" onclick="detectiveChipSeed(${JSON.stringify(c).replace(/"/g,'&quot;')})">
+        <span>${escapeHtml(c)}</span></button>`).join('')}
+    </div>
+    <button class="btn" onclick="detectiveNext()">Next</button>
+    <button class="btn ghost" onclick="detectiveSkip()">Skip this one</button>
+  </div>`;
+}
+
+function detectiveChipSeed(text){
+  const box = $('dtext'); if(!box) return;
+  if(!box.value.trim()){ box.value = text + ' '; }
+  else { box.value = box.value.trim() + ' — ' + text + ' '; }
+  box.focus();
+  box.selectionStart = box.selectionEnd = box.value.length;
+}
+
+function detectiveNext(){
+  const box = $('dtext');
+  const text = box ? box.value.trim() : '';
+  const n = flow.detective.step;
+  if(text) flow.detective.answers[n] = text;
+  detectiveStep(n + 1);
+}
+
+function detectiveSkip(){
+  const n = flow.detective.step;
+  // explicitly do NOT save anything for this question
+  if(flow.detective.answers && flow.detective.answers[n]) delete flow.detective.answers[n];
+  detectiveStep(n + 1);
 }
 
 function detectiveDone(){
   const a = (flow.detective && flow.detective.answers) || {};
-  const mn = escapeHtml(state.monsterName || 'the anger monster');
-  // Build a short, kind summary based on her answers — not a verdict, just a mirror.
-  let lines = [];
-  if(a[1]==='tiny' || a[1]==='small') lines.push("This one is <b>smaller</b> than it felt at first. Good catch.");
-  if(a[1]==='medium')                  lines.push("This is a <b>medium-sized</b> thing — real, but you can handle it.");
-  if(a[1]==='big')                     lines.push("This is a <b>real big</b> problem — your feelings about it make sense.");
-  if(a[2]==='guess' || a[2]==='false') lines.push(mn+" was <b>guessing</b> — and probably wrong this time.");
-  if(a[2]==='maybe')                   lines.push("You are not sure it is true — that is okay, you do not have to know everything.");
-  if(a[2]==='sure')                    lines.push("Okay — you are sure it is true. That is real information.");
-  if(a[3]==='okay' || a[3]==='different') lines.push("And it is not actually a <b>bad</b> thing — just different. Big difference!");
-  if(a[3]==='annoying')                lines.push("It is annoying, not actually bad — that is good to know.");
-  if(a[3]==='bad')                     lines.push("And it IS a bad thing — your feelings are right.");
-  if(a[4]==='me' || a[4]==='ask')      lines.push("And you <b>can</b> do something about it. That is great news!");
-  if(a[4]==='partly')                  lines.push("You can change part of it — focus on that part.");
-  if(a[4]==='no')                      lines.push("You cannot control this one. Getting mad will not change it — letting it go is a brave choice.");
-  if(a[5]==='comment')                 lines.push("It was a <b>comment</b>, not a judgment. They were just noticing — that is not the same as being mean.");
-  if(a[5]==='aboutother')              lines.push("That comment was about someone else — not about you. ${mn} was making it personal when it was not.");
-  if(a[5]==='question')                lines.push("It was a <b>question</b>, not a judgment. People ask questions to understand, not to attack.");
-  if(a[5]==='unsure')                  lines.push("Hard to tell — when you cannot tell, you can <b>ask</b>: 'did you mean that as a joke or a real thing?'");
-  if(a[5]==='judgment')                lines.push("That was a <b>judgment</b>, and that is not okay. You can set a kind, strong boundary about it.");
+  // count how many questions got real writing (≥3 chars)
+  const engagedCount = Object.values(a).filter(t => t && t.trim().length >= 3).length;
+  const thoughtful = engagedCount >= 3;
 
+  // award points — base 1 for finishing, bonus 1 if thoughtful
+  let pts = 1;
+  if(thoughtful) pts += 1;
+  state.points += pts;
+  state.totalPoints += pts;
+
+  // log the entry for the therapist report
+  if(!state.detectiveEntries) state.detectiveEntries = [];
+  state.detectiveEntries.unshift({
+    ts: Date.now(),
+    isPerson: !!flow.detective.isPerson,
+    thought: flow.thought || '',
+    answers: { ...a },
+    engagedCount,
+    type: 'detective',
+  });
+  save();
+
+  // honest closing screen — no verdict, just "you did the work"
+  const inSession = !!flow.tool;   // if invoked as a coping tool, give option to continue
   screen.innerHTML=`${topbar(null)}
   <div class="pad fade">
-    <span class="step-tag">CASE CLOSED 🔍</span>
-    <div class="step-title">Here is what the detective found</div>
+    <span class="step-tag">YOU DID THE WORK 🌟</span>
+    <div class="step-title" style="color:var(--grape-deep)">${engagedCount === 0 ? 'You came here. That counts.' : 'You wrote it down. That is the work.'}</div>
+    <div class="duo" style="margin:8px auto">${buddy('happy',104)}</div>
     <div class="card">
-      ${lines.map(l=>`<p style="margin:6px 0">🔎 ${l}</p>`).join('')}
+      <p style="font-size:15px">You ${engagedCount === 0 ? 'looked at the questions' : 'thought through '+engagedCount+' of the questions'} — that's the part that's yours.
+      Your therapist will love seeing this.</p>
+      ${thoughtful ? `<p style="font-size:13px;color:var(--mint);font-weight:800;margin-top:8px">🌟 Thoughtful bonus — you really dug in</p>` : ''}
     </div>
-    ${a[5]==='judgment' ? `
-      <div class="card tip"><p>💪 Want to practice <b>speaking up</b> kindly but strongly about that?</p>
-        <button class="btn" style="margin-top:8px" onclick="go('boundaryPractice')">Practice speaking up 💪</button>
-      </div>` : ''}
-    <div class="card" style="background:#eaf4ec">
-      <p>🌟 You just did a really hard thing — you slowed down and <b>looked</b> at the thought instead of just believing it. That is the thoughtful you in action.</p>
-    </div>
-    <button class="btn go" onclick="afterTool()">I am done investigating ✅</button>
+    <div class="pointpop">+${pts} ⭐</div>
+    ${inSession ? `
+      <div class="card tip" style="margin-top:12px">
+        <p>Want to do a calm-down tool now?</p>
+        <button class="btn" style="margin-top:8px" onclick="afterTool()">Yes — calm down now 🧰</button>
+        <button class="btn ghost" style="margin-top:6px" onclick="go('home')">No, I'm okay — back home</button>
+      </div>
+    ` : `
+      <button class="btn" onclick="go('home')">Back home</button>
+    `}
   </div>`;
 }
 renderers.express = () => {
@@ -2020,6 +2146,133 @@ const FAITH_MESSAGES = [
     verse:'"The Lord is near to the brokenhearted." — Psalm 34:18' },
 ];
 
+/* =============================================================
+   TELL BUBBLE WHAT HAPPENED — the honesty path
+   When something didn't work, or a friend let her down, or
+   she just needs to vent. Validation + name-what-she-controlled.
+============================================================= */
+const TELLBUBBLE_PATHS = [
+  { id:'didntwork', e:'🪫', label:"I tried something and it didn't work",
+    prompt:"Tell me what you tried, and how it went.",
+    placeholder:"What did you try? What happened after?" },
+  { id:'friend',    e:'💔', label:"Something with a friend didn't go well",
+    prompt:"Tell me what happened with your friend.",
+    placeholder:"What did they do or say? How did it feel?" },
+  { id:'else',      e:'🌪️', label:"Something else is bugging me",
+    prompt:"Tell me what's bugging you.",
+    placeholder:"What happened? How are you feeling?" },
+];
+const CONTROLLED_CHIPS = [
+  'I tried hard',
+  'I used my words',
+  'I asked for help',
+  'I walked away',
+  'I stayed calm',
+  'I told the truth',
+  'I tried a tool',
+  'I came back here',
+];
+
+renderers.tellBubble = () => {
+  screen.innerHTML=`${topbar('home')}
+  <div class="pad fade">
+    <span class="step-tag">TELL BUBBLE 💜</span>
+    <div class="step-title">Hey. What happened?</div>
+    <div class="duo" style="margin:6px auto">${buddy('',108)}</div>
+    <div class="card"><p>I am here. Pick whichever fits best — or "something else" works too.</p></div>
+    ${TELLBUBBLE_PATHS.map(p=>`
+      <button class="choice" onclick="tellBubblePath('${p.id}')">
+        <span class="ce">${p.e}</span>${escapeHtml(p.label)}</button>`).join('')}
+    ${(state.tellBubbles && state.tellBubbles.length) ? `
+      <div class="door-q" style="margin-top:18px">Things you've told me before</div>
+      ${state.tellBubbles.slice(0,3).map(t => `
+        <div class="card" style="background:#f5edfb">
+          <div style="font-size:11px;color:var(--ink-soft);font-weight:800">${escapeHtml(new Date(t.ts).toLocaleString())}</div>
+          <div style="font-size:14px;color:var(--ink);font-weight:600;margin-top:4px">💜 ${escapeHtml((t.text||'').slice(0,140))}${(t.text||'').length>140?'...':''}</div>
+        </div>`).join('')}` : ''}
+  </div>`;
+};
+
+function tellBubblePath(id){
+  const path = TELLBUBBLE_PATHS.find(p=>p.id===id);
+  if(!path) return;
+  flow.tellBubble = { pathId:id };
+  go('tellBubbleStory');
+}
+
+renderers.tellBubbleStory = () => {
+  const path = TELLBUBBLE_PATHS.find(p=>p.id===(flow.tellBubble&&flow.tellBubble.pathId));
+  if(!path){ go('tellBubble'); return; }
+  screen.innerHTML=`${topbar('tellBubble')}
+  <div class="pad fade">
+    <span class="step-tag">${path.e} I'M LISTENING</span>
+    <div class="step-title">${escapeHtml(path.prompt)}</div>
+    <div class="duo" style="margin:6px auto">${buddy('',96)}</div>
+    <div class="step-sub">Take your time. There is no right way to say it.</div>
+    <textarea id="tbtext" placeholder="${escapeAttr(path.placeholder)}" style="min-height:130px;margin-top:8px"></textarea>
+    <button class="btn" onclick="tellBubbleSubmit()">I told Bubble 💜</button>
+    <button class="btn ghost" onclick="go('tellBubble')">Back</button>
+  </div>`;
+};
+
+function tellBubbleSubmit(){
+  const box = $('tbtext');
+  const text = box ? box.value.trim() : '';
+  flow.tellBubble.text = text;
+  // Bubble's response — validation first, then name-what-she-controlled, then gentle invite
+  screen.innerHTML=`${topbar(null)}
+  <div class="pad fade">
+    <span class="step-tag">BUBBLE HEARD YOU 💜</span>
+    <div class="step-title">Thank you for telling me.</div>
+    <div class="duo" style="margin:8px auto">${buddy('happy',116)}</div>
+    <div class="card" style="background:#f5edfb">
+      <p style="font-size:15.5px;color:var(--ink);line-height:1.5">
+        That sounds hard. I am sorry that happened. Your feelings about it make sense. 💜
+      </p>
+    </div>
+    <div class="card">
+      <h3 style="margin:0;color:var(--grape-deep)">Here is something true:</h3>
+      <p style="font-size:14.5px;margin-top:6px;line-height:1.5">
+        You did the part <b>that was yours</b> — you showed up here and told me.
+        What other people did, or whether something worked, is <b>not</b> all on you.
+        Some of that is up to other people, and some of it is just how life goes sometimes.
+      </p>
+    </div>
+    <div class="step-sub" style="margin-top:14px">If you want, tap any parts that <b>you</b> did. Or skip this step.</div>
+    <div class="chipwrap">
+      ${CONTROLLED_CHIPS.map(c => `<button class="chip" onclick="toggleChip(this,false)">
+        <span>${escapeHtml(c)}</span></button>`).join('')}
+    </div>
+    <button class="btn" onclick="tellBubbleDone()">Done telling Bubble ✅</button>
+    <button class="btn ghost" onclick="tellBubbleDone()">Skip and finish</button>
+  </div>`;
+};
+
+function tellBubbleDone(){
+  const controlled = [...screen.querySelectorAll('.chip.sel')].map(c=>c.textContent.trim());
+  if(!state.tellBubbles) state.tellBubbles = [];
+  state.tellBubbles.unshift({
+    ts: Date.now(),
+    path: flow.tellBubble.pathId,
+    text: flow.tellBubble.text || '',
+    controlled,
+    type: 'tellbubble',
+  });
+  // earn 1 point for showing up
+  state.points += 1;
+  state.totalPoints += 1;
+  save();
+  screen.innerHTML=`<div class="celebrate" id="celeb">
+    <div style="font-size:28px">💜 ✨ 💜</div>
+    <h2 style="color:var(--grape-deep)">Thank you for trusting me.</h2>
+    <div class="duo" style="margin:10px 0">${buddy('happy',104)}</div>
+    <div class="big" style="font-size:14.5px">Telling Bubble is how we keep getting through hard things together.</div>
+    <div class="pointpop">+1 ⭐</div>
+    <button class="btn" style="max-width:260px" onclick="go('home')">Back home</button>
+  </div>`;
+  burst();
+}
+
 renderers.gratitude = () => {
   screen.innerHTML=`${topbar('home')}
   <div class="pad fade">
@@ -2215,13 +2468,25 @@ renderers.parentHome = () => {
       ${state.totalPoints} earned all-time · anger monster ${state.monsterShrink>=6?'calm & tiny':'shrinking'}</p></div>
 
     <div class="card"><h3>Therapist report</h3>
-      <p>Pick a range — it opens a printable report (Save as PDF).</p>
+      <p>Pick a range — it opens a printable report (Save as PDF or Email).</p>
       <div class="chipwrap">
         <button class="chip" onclick="openReport('week')">This Week</button>
         <button class="chip" onclick="openReport('month')">This Month</button>
         <button class="chip" onclick="openReport('since')">Since Last Report</button>
         <button class="chip" onclick="openReport('all')">All Time</button>
-      </div></div>
+      </div>
+      <div style="margin-top:14px">
+        <label style="font-weight:800;font-size:13px;color:var(--grape-deep)">Therapist's email (saved here)</label>
+        <input type="email" id="therapistEmail" value="${escapeAttr(state.therapistEmail||'')}"
+          placeholder="therapist@example.com"
+          style="display:block;width:100%;margin-top:6px;padding:9px;border:2px solid var(--lilac);border-radius:10px;font-family:'Nunito',sans-serif;font-size:14px;font-weight:600;color:var(--ink)">
+        <button class="btn ghost" style="margin-top:8px" onclick="saveTherapistEmail()">Save email</button>
+        <p style="font-size:12px;color:var(--ink-soft);font-weight:600;margin-top:8px">
+          Tip: when you tap "Email to therapist" in the report, it opens your email app pre-filled.
+          Save the report as a PDF first, then attach it before sending.
+        </p>
+      </div>
+    </div>
 
     <div class="card"><h3>📝 Review &amp; annotate her moments</h3>
       <p>Tap a moment to add your own observations or context. These notes are <b>hidden from Adelyn</b> and only appear in the therapist report.</p>
@@ -2318,6 +2583,16 @@ function sendNote(){
 }
 function renameMonster(){
   const b=$('mname'); if(b&&b.value.trim()){ state.monsterName=b.value.trim(); save(); go('parentHome'); }
+}
+function saveTherapistEmail(){
+  const b=$('therapistEmail');
+  if(!b) return;
+  const v = b.value.trim();
+  state.therapistEmail = v;
+  save();
+  // Tiny feedback
+  b.style.borderColor = '#3fd6a8';
+  setTimeout(()=>{ b.style.borderColor = ''; }, 1200);
 }
 
 /* =============================================================

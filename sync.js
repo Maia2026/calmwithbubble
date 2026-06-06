@@ -117,6 +117,28 @@ const Sync = (() => {
       }).sort((a,b)=>(b.ts||0)-(a.ts||0));
     }
 
+    // tellBubbles: union by ts + path + text
+    {
+      const all = [...(localS.tellBubbles||[]), ...(cloudS.tellBubbles||[])];
+      const seen = new Set();
+      out.tellBubbles = all.filter(t => {
+        const k = (t.ts||'') + '|' + (t.path||'') + '|' + (t.text||'');
+        if(seen.has(k)) return false;
+        seen.add(k); return true;
+      }).sort((a,b)=>(b.ts||0)-(a.ts||0));
+    }
+
+    // detectiveEntries: union by ts
+    {
+      const all = [...(localS.detectiveEntries||[]), ...(cloudS.detectiveEntries||[])];
+      const seen = new Set();
+      out.detectiveEntries = all.filter(d => {
+        const k = (d.ts||'');
+        if(seen.has(k)) return false;
+        seen.add(k); return true;
+      }).sort((a,b)=>(b.ts||0)-(a.ts||0));
+    }
+
     // unlocked items: union — once unlocked, stays unlocked
     out.owned = { ...(localS.owned||{}), ...(cloudS.owned||{}) };
 
