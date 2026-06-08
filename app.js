@@ -324,8 +324,8 @@ function buildReport(kind){
       ? `<table><tr><th>When</th><th>Trigger</th><th>What Adelyn wrote</th></tr>${noteList}</table>`
       : '<p>No written notes in this period.</p>'}
 
-    <h2>Gratitude &amp; quiet moments</h2>
-    <p style="font-size:12px;color:#666">What Adelyn noticed as good in her days — and times she paused for a reminder she is loved.</p>
+    <h2>Sunshine — gratitude &amp; quiet moments</h2>
+    <p style="font-size:12px;color:#666">The "Sunshine" section of the app, where Adelyn can either practice gratitude or tap "Remind me I am loved" for a comfort/identity message.</p>
     ${(()=>{
       const gs = (state.gratitudes||[]).filter(g => (g.ts||0) >= start)
         .sort((a,b)=>(b.ts||0)-(a.ts||0));
@@ -514,6 +514,10 @@ function go(view, data, opts){
   // clear cached greeting when we enter home from somewhere else (fresh visit)
   // (polling redraws call go('home') too but currentView is already 'home', so cache is kept)
   if(view === 'home' && currentView !== 'home') cachedGreeting = null;
+  // stop bubble animation if we're leaving that screen
+  if(currentView === 'distractBubbles' && view !== 'distractBubbles'){
+    if(typeof stopBubbleAnimation === 'function') stopBubbleAnimation();
+  }
   // push current onto stack unless this is a back-nav or going home (reset)
   if(!opts || !opts.back){
     if(view === 'home'){ navStack = []; }
@@ -644,6 +648,7 @@ const TOOLS=[
   {id:'mantra',e:'💜',name:'Say my mantra',kind:'mantra',desc:'Tell myself something strong.'},
   {id:'faith',e:'🙏',name:'Prayer or verse',kind:'faith',desc:'A calm prayer or a verse I love.'},
   {id:'detective',e:'🔍',name:'Be a thought detective',kind:'detective',desc:'Check if a worried thought is really true.'},
+  {id:'distract',e:'🎈',name:'Distract me',kind:'distract',desc:'Take my mind off it — facts, jokes, bubbles, math.'},
   {id:'express',e:'✏️',name:'Get the feeling out',kind:'express',desc:'A safe way to let the big feeling out.'},
 ];
 const MANTRAS=['I can handle this.','I get to choose what happens next.',
@@ -775,8 +780,8 @@ renderers.home = () => {
       <div><div class="dt">Be brave</div><div class="ds">Something feels scary</div></div></button>
     <button class="door people" onclick="go('peopleStart')"><div class="emoji">🧩</div>
       <div><div class="dt">People practice</div><div class="ds">Get better at reading people</div></div></button>
-    <button class="door gratitude" onclick="go('gratitude')"><div class="emoji">🌻</div>
-      <div><div class="dt">Gratitude</div><div class="ds">Notice a good thing</div></div></button>
+    <button class="door gratitude" onclick="go('gratitude')"><div class="emoji">☀️</div>
+      <div><div class="dt">Sunshine</div><div class="ds">Gratitude & a reminder I'm loved</div></div></button>
     <div class="minirow">
       <button class="minicard" onclick="go('progress')"><div class="mi">🏆</div><div class="ml">My Wins</div></button>
       <button class="minicard" onclick="go('rewards')"><div class="mi">🎁</div><div class="ml">Rewards</div></button>
@@ -1017,6 +1022,7 @@ function pickTool(id){
   else if(tool.kind==='mantra') go('mantra');
   else if(tool.kind==='faith') go('faith');
   else if(tool.kind==='detective') go('detective');
+  else if(tool.kind==='distract') go('distract');
   else if(tool.kind==='express') go('express');
   else go('toolList',{tool});
 }
@@ -1929,7 +1935,7 @@ renderers.celebrate = (d) => {
       <div class="card" style="margin-top:16px;background:#eaf4ec;text-align:left">
         <h3 style="margin:0;color:var(--grape-deep);text-align:center">You are in a good place 🌟</h3>
         <p style="text-align:center;margin:6px 0 10px">Want to do something good with this calm?</p>
-        <button class="choice" onclick="go('gratitude')"><span class="ce">🌻</span>Gratitude</button>
+        <button class="choice" onclick="go('gratitude')"><span class="ce">☀️</span>Sunshine</button>
         <button class="choice" onclick="go('peopleStart')"><span class="ce">🧩</span>People Practice</button>
         <button class="choice" onclick="go('rewards')"><span class="ce">🎁</span>Look at my rewards</button>
         <button class="choice" onclick="go('closet')"><span class="ce">🎩</span>Go to my closet</button>
@@ -2273,20 +2279,407 @@ function tellBubbleDone(){
   burst();
 }
 
+/* =============================================================
+   DISTRACT ME — coping tool: facts, ideas, jokes, bubbles, math
+   Lives only inside the coping tool picker. Each sub-tool earns
+   1 point per session (not per item). No timers, no streaks,
+   no sound. The goal is calming, not scoring.
+============================================================= */
+
+const DISTRACT_FACTS = [
+  "Octopuses have three hearts and blue blood.",
+  "A group of flamingos is called a flamboyance.",
+  "Honey never spoils — archaeologists found 3,000-year-old honey still good to eat.",
+  "Cows have best friends and get stressed when they're apart.",
+  "A snail can sleep for three years at a time.",
+  "Bananas are berries, but strawberries aren't.",
+  "Sea otters hold hands while they sleep so they don't drift apart.",
+  "The tongue is the strongest muscle in the body for its size.",
+  "A day on Venus is longer than a year on Venus.",
+  "Sharks existed before trees did.",
+  "Wombat poop is cube-shaped.",
+  "Butterflies taste with their feet.",
+  "The shortest war in history lasted only 38 minutes.",
+  "Your brain uses about 20% of your body's energy.",
+  "Penguins propose to each other with pebbles.",
+  "Cats have 32 muscles in each ear.",
+  "Lightning is five times hotter than the surface of the sun.",
+  "An ostrich's eye is bigger than its brain.",
+  "Bees can recognize human faces.",
+  "Goats have rectangular pupils.",
+  "Polar bears have black skin under their white fur.",
+  "Slugs have four noses.",
+  "The Eiffel Tower can grow about 6 inches taller in the summer.",
+  "Dolphins call each other by name using unique whistles.",
+  "Your nose can remember 50,000 different scents.",
+  "Crows can remember human faces for years.",
+  "A blue whale's heart is as big as a small car.",
+  "Apples float because they are 25% air.",
+  "There are more stars in space than grains of sand on every beach on Earth.",
+  "Otters carry a favorite rock in a pouch under their arm.",
+];
+
+const DISTRACT_IDEAS = [
+  "Find 5 things in this room that are the color blue 🔵",
+  "Count backwards from 100 by 7s 🔢",
+  "Name an animal for every letter of the alphabet 🐇",
+  "Stretch like a cat 🐱",
+  "Do 10 jumping jacks 🤸",
+  "Hum your favorite song 🎵",
+  "Look out a window and count the clouds ☁️",
+  "Draw something silly on paper ✏️",
+  "List your top 3 favorite books 📚",
+  "Wiggle every finger one at a time 👋",
+  "Try to lick your elbow (you can't — it's funny to try) 😆",
+  "Spin in a circle 3 times 🌀",
+  "Stand on one foot for as long as you can 🦩",
+  "Whisper your name very slowly 🤫",
+  "Look at something far away, then close, then far again 👀",
+  "Touch your toes 🦶",
+  "Name 5 things you can hear right now 👂",
+  "Find something soft and pet it 🧸",
+  "Think of your favorite memory and replay it in your head 💭",
+  "Make the silliest face you can in a mirror 🤪",
+  "Stretch your arms way up high 🙆",
+  "Count how many letters are in your full name ✏️",
+  "Wiggle your nose like a bunny 🐰",
+  "Pretend you're a tree in the wind 🌳",
+  "Hop on one foot 10 times 🦘",
+];
+
+const DISTRACT_JOKES = [
+  ["What do you call a bear with no teeth?", "A gummy bear!"],
+  ["Why don't scientists trust atoms?", "Because they make up everything!"],
+  ["What do you call a fish wearing a crown?", "Your royal hi-ness!"],
+  ["Why did the math book look sad?", "It had too many problems."],
+  ["What's brown and sticky?", "A stick!"],
+  ["Why can't a bicycle stand up by itself?", "It's two-tired!"],
+  ["What did one wall say to the other wall?", "I'll meet you at the corner!"],
+  ["Why did the cookie go to the doctor?", "It was feeling crumby."],
+  ["What do you call cheese that isn't yours?", "Nacho cheese!"],
+  ["How does the moon cut its hair?", "Eclipse it."],
+  ["What's a vampire's favorite fruit?", "A blood orange!"],
+  ["Why was the broom late?", "It overswept."],
+  ["What did the ocean say to the shore?", "Nothing — it just waved."],
+  ["What do you call a sleeping bull?", "A bulldozer!"],
+  ["Why did the scarecrow win an award?", "He was outstanding in his field!"],
+  ["What kind of shoes do ninjas wear?", "Sneakers!"],
+  ["Why don't eggs tell jokes?", "They'd crack each other up."],
+  ["What's a tornado's favorite game?", "Twister!"],
+  ["Why did the banana go to the doctor?", "It wasn't peeling well."],
+  ["How do you organize a space party?", "You planet."],
+  ["What do you call a dinosaur that crashes his car?", "Tyrannosaurus wrecks!"],
+  ["Why did the picture go to jail?", "It was framed!"],
+  ["What do you get when you cross a snowman and a vampire?", "Frostbite!"],
+  ["Why did the kid bring a ladder to school?", "Because it was high school!"],
+  ["What did the grape do when it got stepped on?", "Nothing — it just let out a little wine!"],
+];
+
+/* --- Distract Me: sub-tool picker --- */
+renderers.distract = () => {
+  // Award the session point once per fresh entry from outside Distract Me.
+  // Coming from any distract sub-tool keeps the flag (don't double-award).
+  const fromOutside = !['distract','distractFacts','distractIdeas','distractJokes','distractBubbles','distractMath'].includes(navStack.length ? navStack[navStack.length-1].view : '');
+  if(fromOutside) flow.distractAwarded = false;
+
+  if(!flow.distractAwarded){
+    state.points += 1;
+    state.totalPoints += 1;
+    flow.distractAwarded = true;
+    save();
+  }
+  screen.innerHTML=`${topbar(null)}
+  <div class="pad fade">
+    <span class="step-tag">DISTRACT ME 🎈</span>
+    <div class="step-title">Take your mind off it</div>
+    <div class="duo" style="margin:6px auto">${buddy('',104)}</div>
+    <div class="card"><p>Pick something fun to do for a minute. Your feelings can wait while your brain gets a little break.</p></div>
+    <button class="choice" onclick="go('distractFacts')"><span class="ce">💡</span>Random fun facts</button>
+    <button class="choice" onclick="go('distractIdeas')"><span class="ce">🎲</span>Something to do right now</button>
+    <button class="choice" onclick="go('distractJokes')"><span class="ce">😂</span>Tell me a joke</button>
+    <button class="choice" onclick="go('distractBubbles')"><span class="ce">🫧</span>Pop bubbles</button>
+    <button class="choice" onclick="go('distractMath')"><span class="ce">✖️</span>Math game</button>
+    <button class="btn ghost" style="margin-top:12px" onclick="afterTool()">Done — back to coping</button>
+  </div>`;
+};
+
+/* --- Facts sub-tool --- */
+renderers.distractFacts = () => {
+  if(typeof flow.factIdx !== 'number') flow.factIdx = Math.floor(Math.random()*DISTRACT_FACTS.length);
+  const fact = DISTRACT_FACTS[flow.factIdx];
+  screen.innerHTML=`${topbar('distract')}
+  <div class="pad fade">
+    <span class="step-tag">FUN FACT 💡</span>
+    <div class="duo" style="margin:6px auto">${buddy('',96)}</div>
+    <div class="card" style="background:#fff8e1">
+      <p style="font-size:16px;color:var(--ink);line-height:1.5;font-weight:600">${escapeHtml(fact)}</p>
+    </div>
+    <button class="btn" onclick="distractNextFact()">Tell me another 💡</button>
+    <button class="btn ghost" onclick="go('distract')">Try something else</button>
+  </div>`;
+};
+function distractNextFact(){
+  let next = Math.floor(Math.random()*DISTRACT_FACTS.length);
+  if(next === flow.factIdx && DISTRACT_FACTS.length > 1){
+    next = (next + 1) % DISTRACT_FACTS.length;
+  }
+  flow.factIdx = next;
+  go('distractFacts');
+}
+
+/* --- Distraction ideas sub-tool --- */
+renderers.distractIdeas = () => {
+  if(typeof flow.ideaIdx !== 'number') flow.ideaIdx = Math.floor(Math.random()*DISTRACT_IDEAS.length);
+  const idea = DISTRACT_IDEAS[flow.ideaIdx];
+  screen.innerHTML=`${topbar('distract')}
+  <div class="pad fade">
+    <span class="step-tag">TRY THIS 🎲</span>
+    <div class="duo" style="margin:6px auto">${buddy('',96)}</div>
+    <div class="card" style="background:#eaf4ec">
+      <p style="font-size:16px;color:var(--ink);line-height:1.5;font-weight:700">${escapeHtml(idea)}</p>
+    </div>
+    <div class="card tip"><p>Go ahead and try it! When you're done, come back.</p></div>
+    <button class="btn" onclick="distractNextIdea()">Give me another idea 🎲</button>
+    <button class="btn ghost" onclick="go('distract')">Try something else</button>
+  </div>`;
+};
+function distractNextIdea(){
+  let next = Math.floor(Math.random()*DISTRACT_IDEAS.length);
+  if(next === flow.ideaIdx && DISTRACT_IDEAS.length > 1){
+    next = (next + 1) % DISTRACT_IDEAS.length;
+  }
+  flow.ideaIdx = next;
+  go('distractIdeas');
+}
+
+/* --- Jokes sub-tool: setup → tap → punchline → next --- */
+renderers.distractJokes = () => {
+  if(typeof flow.jokeIdx !== 'number') flow.jokeIdx = Math.floor(Math.random()*DISTRACT_JOKES.length);
+  if(typeof flow.jokeReveal !== 'boolean') flow.jokeReveal = false;
+  const [setup, punch] = DISTRACT_JOKES[flow.jokeIdx];
+  screen.innerHTML=`${topbar('distract')}
+  <div class="pad fade">
+    <span class="step-tag">JOKE TIME 😂</span>
+    <div class="duo" style="margin:6px auto">${buddy('',96)}</div>
+    <div class="card" style="background:#f5edfb">
+      <p style="font-size:16.5px;color:var(--ink);line-height:1.55;font-weight:700">${escapeHtml(setup)}</p>
+      ${flow.jokeReveal ? `<p style="font-size:16px;color:var(--grape-deep);line-height:1.55;font-weight:800;margin-top:14px">${escapeHtml(punch)}</p>` : ''}
+    </div>
+    ${flow.jokeReveal
+      ? `<button class="btn" onclick="distractNextJoke()">Another one 😂</button>`
+      : `<button class="btn" onclick="distractRevealJoke()">Tell me the answer 🥁</button>`}
+    <button class="btn ghost" onclick="go('distract')">Try something else</button>
+  </div>`;
+};
+function distractRevealJoke(){
+  flow.jokeReveal = true;
+  go('distractJokes');
+}
+function distractNextJoke(){
+  let next = Math.floor(Math.random()*DISTRACT_JOKES.length);
+  if(next === flow.jokeIdx && DISTRACT_JOKES.length > 1){
+    next = (next + 1) % DISTRACT_JOKES.length;
+  }
+  flow.jokeIdx = next;
+  flow.jokeReveal = false;
+  go('distractJokes');
+}
+
+/* --- Bubble popping sub-tool ---
+   Floating bubbles drift up; tap to pop. Counter tracks total pops.
+   No win condition, silent, no score pressure. */
+renderers.distractBubbles = () => {
+  if(typeof flow.popCount !== 'number') flow.popCount = 0;
+  screen.innerHTML=`${topbar('distract')}
+  <div class="pad fade">
+    <span class="step-tag">BUBBLES 🫧</span>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:6px">
+      <div style="font-weight:800;color:var(--orchid);font-size:14px">Popped: <span id="popCount">${flow.popCount}</span></div>
+      <button class="btn ghost" style="width:auto;margin:0;padding:8px 14px" onclick="distractStopBubbles()">Done</button>
+    </div>
+    <div id="bubbleStage" style="position:relative;width:100%;height:480px;background:linear-gradient(180deg,#f5edfb 0%,#e8d6f4 100%);border-radius:18px;margin-top:10px;overflow:hidden;cursor:pointer;touch-action:manipulation"></div>
+    <div class="card tip" style="margin-top:10px"><p>Tap the bubbles to pop them. As many as you want. 🫧</p></div>
+  </div>`;
+  startBubbleAnimation();
+};
+
+let bubbleIntervalSpawn = null;
+let bubbleIntervalAnim = null;
+let bubbleList = [];
+
+function startBubbleAnimation(){
+  stopBubbleAnimation();
+  bubbleList = [];
+  const stage = $('bubbleStage');
+  if(!stage) return;
+
+  // spawn a new bubble every ~700ms
+  bubbleIntervalSpawn = setInterval(() => {
+    spawnBubble();
+  }, 700);
+  // spawn 3 immediately so it feels alive on entry
+  spawnBubble(); spawnBubble(); spawnBubble();
+
+  // animation frame — using interval for simplicity (~33ms = ~30fps)
+  bubbleIntervalAnim = setInterval(() => {
+    animateBubbles();
+  }, 33);
+}
+
+function spawnBubble(){
+  const stage = $('bubbleStage');
+  if(!stage) return;
+  const stageW = stage.clientWidth;
+  const stageH = stage.clientHeight;
+  if(!stageW || !stageH) return;
+  const size = 36 + Math.floor(Math.random()*42);  // 36-78px
+  const x = Math.floor(Math.random() * (stageW - size));
+  const y = stageH + size;  // start just below the stage
+  const speed = 0.6 + Math.random()*1.0;   // pixels per frame
+  const wobble = 0.4 + Math.random()*0.6;  // horizontal sway
+  const wobblePhase = Math.random()*Math.PI*2;
+
+  const el = document.createElement('button');
+  el.className = 'bubble-float';
+  el.style.cssText = `position:absolute;left:${x}px;top:${y}px;width:${size}px;height:${size}px;border-radius:50%;border:none;padding:0;cursor:pointer;background:radial-gradient(circle at 30% 30%,rgba(255,255,255,0.85),rgba(173,138,219,0.55) 60%,rgba(125,82,178,0.4));box-shadow:inset -4px -6px 8px rgba(125,82,178,0.3),0 2px 8px rgba(125,82,178,0.25);touch-action:manipulation`;
+  el.setAttribute('aria-label','bubble');
+  el.onclick = (e) => { e.stopPropagation(); popBubble(el); };
+  stage.appendChild(el);
+
+  bubbleList.push({ el, x, y, size, speed, wobble, wobblePhase, baseX:x, t:0 });
+}
+
+function animateBubbles(){
+  const stage = $('bubbleStage');
+  if(!stage) return;
+  const stageH = stage.clientHeight;
+  bubbleList = bubbleList.filter(b => {
+    b.t += 1;
+    b.y -= b.speed;
+    // horizontal sway
+    const wob = Math.sin((b.t * 0.05) + b.wobblePhase) * (b.wobble * 12);
+    b.x = b.baseX + wob;
+    b.el.style.top = b.y + 'px';
+    b.el.style.left = b.x + 'px';
+    // remove bubbles that floated off the top
+    if(b.y + b.size < 0){
+      try { b.el.remove(); } catch(e){}
+      return false;
+    }
+    return true;
+  });
+}
+
+function popBubble(el){
+  // pop animation
+  el.style.transition = 'transform 0.18s ease-out, opacity 0.18s ease-out';
+  el.style.transform = 'scale(1.7)';
+  el.style.opacity = '0';
+  el.onclick = null;
+  setTimeout(() => { try{ el.remove(); } catch(e){} }, 200);
+  // remove from list immediately
+  bubbleList = bubbleList.filter(b => b.el !== el);
+  flow.popCount = (flow.popCount||0) + 1;
+  const counter = $('popCount');
+  if(counter) counter.textContent = flow.popCount;
+}
+
+function stopBubbleAnimation(){
+  if(bubbleIntervalSpawn){ clearInterval(bubbleIntervalSpawn); bubbleIntervalSpawn = null; }
+  if(bubbleIntervalAnim){ clearInterval(bubbleIntervalAnim); bubbleIntervalAnim = null; }
+  bubbleList = [];
+}
+
+function distractStopBubbles(){
+  stopBubbleAnimation();
+  go('distract');
+}
+
+/* --- Math game sub-tool: multiplication up to 12×12, type-in answer --- */
+renderers.distractMath = () => {
+  // Generate fresh problem if none set
+  if(!flow.mathProb){
+    const a = 1 + Math.floor(Math.random()*12);
+    const b = 1 + Math.floor(Math.random()*12);
+    flow.mathProb = { a, b, ans: a*b };
+    flow.mathStatus = null;   // 'right', 'wrong', null
+    flow.mathLastWrongAns = null;
+    if(typeof flow.mathCount !== 'number') flow.mathCount = 0;
+  }
+  const { a, b } = flow.mathProb;
+  const showRight = flow.mathStatus === 'right';
+  const showWrong = flow.mathStatus === 'wrong';
+
+  screen.innerHTML=`${topbar('distract')}
+  <div class="pad fade">
+    <span class="step-tag">MATH GAME ✖️</span>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:6px">
+      <div style="font-weight:800;color:var(--orchid);font-size:14px">Problems done: ${flow.mathCount}</div>
+      <button class="btn ghost" style="width:auto;margin:0;padding:8px 14px" onclick="distractMathDone()">Done</button>
+    </div>
+    <div class="card" style="text-align:center;margin-top:14px;background:#eaf4ec">
+      <p style="font-size:32px;color:var(--ink);font-weight:800;font-family:'Baloo 2',cursive;margin:6px 0">${a} × ${b} = ?</p>
+    </div>
+    ${showRight ? `
+      <div class="card" style="background:#d8f5e6;text-align:center">
+        <p style="font-size:17px;font-weight:800;color:#1f9d77">Yes! ${a} × ${b} = ${a*b} 🎯</p>
+      </div>
+      <button class="btn" onclick="distractMathNext()">Next problem ›</button>
+    ` : showWrong ? `
+      <div class="card" style="background:#fff3d6;text-align:center">
+        <p style="font-size:15px;font-weight:700;color:#8b6e1a">Close! ${a} × ${b} = <b>${a*b}</b>. Let's try another. 💜</p>
+      </div>
+      <button class="btn" onclick="distractMathNext()">Next problem ›</button>
+    ` : `
+      <input type="number" id="mathInput" inputmode="numeric" pattern="[0-9]*"
+        placeholder="Type your answer"
+        style="display:block;width:100%;margin-top:14px;padding:14px;font-size:22px;font-family:'Baloo 2',cursive;text-align:center;border:2px solid var(--lilac);border-radius:12px;color:var(--grape-deep);font-weight:800"
+        onkeydown="if(event.key==='Enter'){ distractMathCheck(); }">
+      <button class="btn" onclick="distractMathCheck()">Check my answer ✓</button>
+    `}
+    <button class="btn ghost" onclick="go('distract')">Try something else</button>
+  </div>`;
+  // auto-focus the input on render (only when prompting)
+  if(!showRight && !showWrong){
+    setTimeout(() => { const i = $('mathInput'); if(i) i.focus(); }, 50);
+  }
+};
+
+function distractMathCheck(){
+  const i = $('mathInput');
+  if(!i) return;
+  const v = parseInt(i.value, 10);
+  if(isNaN(v)) return;  // ignore empty/garbage
+  const correct = (v === flow.mathProb.ans);
+  flow.mathStatus = correct ? 'right' : 'wrong';
+  if(correct) flow.mathCount = (flow.mathCount||0) + 1;
+  go('distractMath');
+}
+function distractMathNext(){
+  flow.mathProb = null;
+  flow.mathStatus = null;
+  go('distractMath');
+}
+function distractMathDone(){
+  flow.mathProb = null;
+  flow.mathStatus = null;
+  go('distract');
+}
+
 renderers.gratitude = () => {
   screen.innerHTML=`${topbar('home')}
   <div class="pad fade">
-    <span class="step-tag">GRATITUDE 🌻</span>
-    <div class="step-title">A small good thing</div>
+    <span class="step-tag">SUNSHINE ☀️</span>
+    <div class="step-title">A little warmth</div>
     <div class="duo" style="margin:6px auto">${buddy('',104)}</div>
-    <div class="card"><p>Just one good thing — that is all. Or, if today was hard, pick the other door.</p></div>
+    <div class="card"><p>Two things you can do here — pick whichever fits today.</p></div>
     <button class="door before" style="margin-top:8px" onclick="go('gratitudeWrite')">
       <div class="emoji">🌻</div>
-      <div><div class="dt">Tell me about a good part of your day</div><div class="ds">One small thing</div></div>
+      <div><div class="dt">Gratitude Practice</div><div class="ds">Notice a good thing from your day</div></div>
     </button>
     <button class="door after" style="margin-top:10px" onclick="go('faithMoment')">
       <div class="emoji">💛</div>
-      <div><div class="dt">I need a reminder I'm loved</div><div class="ds">A quiet moment</div></div>
+      <div><div class="dt">Remind me I am loved</div><div class="ds">A quiet moment</div></div>
     </button>
     ${(state.gratitudes && state.gratitudes.length) ? `
       <div class="door-q" style="margin-top:18px">Things you have noticed</div>
@@ -2305,7 +2698,7 @@ renderers.gratitude = () => {
 renderers.gratitudeWrite = () => {
   screen.innerHTML=`${topbar('gratitude')}
   <div class="pad fade">
-    <span class="step-tag">A GOOD THING 🌻</span>
+    <span class="step-tag">GRATITUDE PRACTICE 🌻</span>
     <div class="step-title">Tell me about a good part of your day</div>
     <div class="duo" style="margin:4px auto">${buddy('',96)}</div>
     <div class="step-sub">Just one thing. Big or small — they all count. Type it, or tap a starter below to help.</div>
@@ -2347,7 +2740,7 @@ function gratitudeSave(){
     <div class="big" style="margin-top:10px;font-size:14px">Noticing good things is its own kind of brave. 💜</div>
     <div class="pointpop">+1 ⭐</div>
     <button class="btn" style="max-width:260px" onclick="go('home')">Back home</button>
-    <button class="btn ghost" style="max-width:260px" onclick="go('gratitude')">Back to gratitude</button>
+    <button class="btn ghost" style="max-width:260px" onclick="go('gratitude')">Back to Sunshine</button>
   </div>`;
   burst();
 }
@@ -2392,7 +2785,7 @@ function faithAmen(){
     <div class="big" style="font-size:15px">You are loved. Always. 💜</div>
     <div class="pointpop">+1 ⭐</div>
     <button class="btn" style="max-width:260px" onclick="go('home')">Back home</button>
-    <button class="btn ghost" style="max-width:260px" onclick="go('gratitude')">Back to gratitude</button>
+    <button class="btn ghost" style="max-width:260px" onclick="go('gratitude')">Back to Sunshine</button>
   </div>`;
   burst();
 }
