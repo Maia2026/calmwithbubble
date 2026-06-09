@@ -98,6 +98,10 @@ const Sync = (() => {
     // lifetime total: never decreases -> MAX
     out.totalPoints = Math.max(localS.totalPoints||0, cloudS.totalPoints||0);
 
+    // last app-opened timestamp: take the MAX across devices.
+    // Used by the push cron to skip notifications when she just used the app.
+    out.lastAppOpenedAt = Math.max(localS.lastAppOpenedAt||0, cloudS.lastAppOpenedAt||0);
+
     // current spendable points: from the MORE RECENTLY UPDATED device
     out.points = newer.points != null ? newer.points : (older.points||0);
 

@@ -3,7 +3,7 @@
    Lesson 16: network-first for HTML so updates land reliably.
    Bump CACHE_VERSION on every deploy that changes cached assets.
 ============================================================= */
-const CACHE_VERSION = 'bubble-v15';
+const CACHE_VERSION = 'bubble-v17';
 const ASSETS = [
   './index.html',
   './styles.css',
@@ -53,4 +53,43 @@ self.addEventListener('fetch', e => {
       }).catch(() => r))
     );
   }
+});
+
+/* =============================================================
+   PUSH NOTIFICATIONS — display incoming pushes from the server.
+   Stage 1: the receiver is wired up; the server isn't sending yet.
+============================================================= */
+self.addEventListener('push', event => {
+  let data = {};
+  try {
+    if (event.data) data = event.data.json();
+  } catch (e) {
+    data = { title: 'Bubble', body: (event.data && event.data.text()) || 'Time to check in!' };
+  }
+  const title = data.title || 'Bubble 💜';
+  const options = {
+    body: data.body || 'Bubble is thinking of you 💜',
+    icon: data.icon || './icon-192.png',
+    badge: data.badge || './icon-192.png',
+    tag: data.tag || 'bubble-reminder',
+    data: { url: data.url || './' },
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  const targetUrl = (event.notification.data && event.notification.data.url) || './';
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+      // Focus an existing tab if one is already open
+      for (const client of list) {
+        if (client.url.includes(self.registration.scope) && 'focus' in client) {
+          return client.focus();
+        }
+      }
+      // Otherwise open a new tab
+      if (clients.openWindow) return clients.openWindow(targetUrl);
+    })
+  );
 });

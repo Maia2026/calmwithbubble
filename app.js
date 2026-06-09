@@ -51,6 +51,7 @@ function freshState(){
     therapistEmail: '',       // parent-saved address for emailing reports
     tellBubbles: [],          // {ts, path, text, controlled, type:'tellbubble'} entries
     detectiveEntries: [],     // {ts, isPerson, answers:{q1..q5: text}, engagedCount} entries
+    lastAppOpenedAt: 0,       // ms timestamp of most recent app open — used by Stage 2 push cron
     customMantras: [],
     customVerses: [],
     parentNotes: [],
@@ -445,6 +446,210 @@ function openReport(kind){
   else { alert('Please allow pop-ups to view the report.'); }
 }
 
+/* =============================================================
+   PUSH NOTIFICATIONS — per-device opt-in, stored on Supabase.
+   Stage 1: subscribe/unsubscribe only. Actual sending in Stage 2.
+============================================================= */
+
+/* VAPID public key — embedded, safe to share (private key lives in Supabase secrets) */
+const VAPID_PUBLIC_KEY = 'BAgEIHKPgI4h_NcwSJXjKme-tM4qc7iMiOrZZZvzGM-mkV1XVjZYc7mtMl5RqCljQYGc-xIK8qlaEGVNA4vbUoY';
+
+/* "Is push enabled on THIS device" — local-only flag, never synced */
+function pushIsEnabled(){
+  try { return localStorage.getItem('bubble_push_enabled') === 'true'; }
+  catch(e){ return false; }
+}
+function pushSetEnabled(v){
+  try { localStorage.setItem('bubble_push_enabled', v ? 'true' : 'false'); }
+  catch(e){}
+}
+
+/* Browser support check */
+function pushIsSupported(){
+  return ('serviceWorker' in navigator) && ('PushManager' in window) && ('Notification' in window);
+}
+
+/* Convert base64 VAPID key to Uint8Array for subscribe() */
+function urlBase64ToUint8Array(base64String){
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for(let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
+  return outputArray;
+}
+
+/* Toggle handler — called from the bell chip on home */
+async function togglePushReminder(){
+  if(!pushIsSupported()){
+    alert('Push reminders are not supported in this browser. On iPhone, make sure you opened the app from your home screen (not from Safari), and that you have iOS 16.4 or later.');
+    return;
+  }
+
+  if(pushIsEnabled()){
+    // Currently ON — turn OFF
+    await pushUnsubscribe();
+    pushSetEnabled(false);
+    refreshBellChip();
+    showPushStatus('Reminders OFF for this device.');
+    return;
+  }
+
+  // Currently OFF — turn ON. First, request permission.
+  let perm;
+  try {
+    perm = await Notification.requestPermission();
+  } catch(e){
+    alert('Could not request notification permission. Try opening the app from your home screen.');
+    return;
+  }
+  if(perm !== 'granted'){
+    if(perm === 'denied'){
+      alert("Notifications were blocked. To enable them on iPhone:\n\n1. Open Settings on your phone\n2. Scroll down to find this app (calmwithbubble)\n3. Tap Notifications and turn them on\n\nThen come back and tap the bell again.");
+    } else {
+      alert('Notification permission was not granted. You can try again anytime.');
+    }
+    return;
+  }
+
+  // Permission granted — subscribe to push
+  const sub = await pushSubscribe();
+  if(!sub){
+    alert('Could not set up reminders on this device. Please try again later.');
+    return;
+  }
+  // Store subscription on Supabase
+  const ok = await pushStoreSubscription(sub);
+  if(!ok){
+    alert('Permission was granted, but we could not save the subscription. Reminders may not work until this is fixed.');
+    return;
+  }
+  pushSetEnabled(true);
+  refreshBellChip();
+  showPushStatus('Reminders are ON for this device. 🔔');
+}
+
+/* Subscribe to push via the service worker — returns the PushSubscription or null */
+async function pushSubscribe(){
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    // If already subscribed, return that one
+    let sub = await reg.pushManager.getSubscription();
+    if(sub) return sub;
+    sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+    });
+    return sub;
+  } catch(e){
+    console.error('[PUSH] subscribe failed:', e);
+    return null;
+  }
+}
+
+async function pushUnsubscribe(){
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if(sub){
+      // Remove from Supabase first, then unsubscribe locally
+      await pushRemoveSubscription(sub);
+      await sub.unsubscribe();
+    }
+  } catch(e){
+    console.error('[PUSH] unsubscribe failed:', e);
+  }
+}
+
+/* Store the subscription on Supabase. Uses the same SUPABASE_URL / SUPABASE_ANON_KEY
+   from sync.js — they're globals there. */
+async function pushStoreSubscription(sub){
+  if(typeof SUPABASE_URL === 'undefined' || typeof SUPABASE_ANON_KEY === 'undefined'){
+    console.error('[PUSH] Supabase not configured');
+    return false;
+  }
+  const subJson = sub.toJSON();
+  const body = {
+    family_id: 'adelyn-household',
+    device_id: getDeviceId(),
+    endpoint: subJson.endpoint,
+    keys: subJson.keys,
+    user_agent: navigator.userAgent.slice(0, 200),
+    updated_at: new Date().toISOString(),
+  };
+  try {
+    const res = await fetch(SUPABASE_URL + '/rest/v1/push_subscriptions?on_conflict=device_id', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates',
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify(body),
+    });
+    if(!res.ok){
+      console.error('[PUSH] store failed HTTP', res.status, await res.text());
+      return false;
+    }
+    console.log('[PUSH] subscription stored ✓');
+    return true;
+  } catch(e){
+    console.error('[PUSH] store error:', e);
+    return false;
+  }
+}
+
+async function pushRemoveSubscription(sub){
+  if(typeof SUPABASE_URL === 'undefined' || typeof SUPABASE_ANON_KEY === 'undefined') return;
+  try {
+    await fetch(SUPABASE_URL + '/rest/v1/push_subscriptions?device_id=eq.' + encodeURIComponent(getDeviceId()), {
+      method: 'DELETE',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+      },
+    });
+    console.log('[PUSH] subscription removed ✓');
+  } catch(e){
+    console.error('[PUSH] remove error:', e);
+  }
+}
+
+/* Stable per-device ID stored in localStorage */
+function getDeviceId(){
+  try {
+    let id = localStorage.getItem('bubble_device_id');
+    if(!id){
+      id = 'd_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10);
+      localStorage.setItem('bubble_device_id', id);
+    }
+    return id;
+  } catch(e){
+    return 'd_unknown_' + Math.random().toString(36).slice(2,10);
+  }
+}
+
+/* Update just the bell chip without redrawing the whole home screen */
+function refreshBellChip(){
+  const el = document.getElementById('bellChip');
+  if(!el) return;
+  el.className = 'bellchip ' + (pushIsEnabled() ? 'on' : 'off');
+  el.innerHTML = pushIsEnabled() ? '🔔' : '🔕';
+}
+
+/* Brief floating status message */
+function showPushStatus(text){
+  const old = document.getElementById('pushStatus');
+  if(old) old.remove();
+  const div = document.createElement('div');
+  div.id = 'pushStatus';
+  div.textContent = text;
+  div.style.cssText = 'position:fixed;top:60px;left:50%;transform:translateX(-50%);background:var(--grape-deep);color:#fff;padding:10px 18px;border-radius:24px;font-weight:700;font-size:14px;box-shadow:0 4px 14px rgba(0,0,0,0.2);z-index:9999;animation:fade .25s ease-in';
+  document.body.appendChild(div);
+  setTimeout(() => { try{ div.remove(); }catch(e){} }, 3000);
+}
+
 /* ====== BOOT ====== */
 async function boot(){
   // load local, migrate, then merge any cloud data (Lesson 1)
@@ -454,6 +659,7 @@ async function boot(){
     if(cloud) state = migrate(Sync.merge(state, cloud));
   }
   if(!PIN_STORE.has()) PIN_STORE.set(DEFAULT_PIN);   // Lesson 10/11
+  state.lastAppOpenedAt = Date.now();   // for Stage 2 push: skip if used recently
   Sync.saveLocal(state);
 
   // live updates from other devices — only redraw if user-visible data actually changed
@@ -474,6 +680,48 @@ async function boot(){
   }
   updateSyncDot();
   go('home');
+  // Daily-ish push subscription health check — handle iOS silent revocation.
+  // If she's marked enabled locally but the browser has no subscription
+  // (or a different one), silently re-subscribe and refresh the server record.
+  pushHealthCheck();
+}
+
+/* Push subscription health check. iOS sometimes silently revokes push
+   subscriptions; without this, reminders would just stop arriving with
+   no visible failure. Called on every app load.
+   - If local says ON but browser has no sub → try to re-subscribe.
+   - If browser has a sub but it doesn't match what we stored → re-register.
+   - Failures are silent (logged only); user can always tap the bell to retry. */
+async function pushHealthCheck(){
+  if(!pushIsEnabled()) return;            // user opted out — nothing to check
+  if(!pushIsSupported()) return;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if(!sub){
+      // iOS revoked silently. Try to re-subscribe.
+      console.log('[PUSH] health check: no subscription, attempting re-subscribe');
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+      });
+      if(sub){
+        const ok = await pushStoreSubscription(sub);
+        if(ok) console.log('[PUSH] health check: re-subscribed ✓');
+        else console.warn('[PUSH] health check: re-subscribe stored failed');
+      } else {
+        console.warn('[PUSH] health check: re-subscribe blocked (permission revoked?)');
+        pushSetEnabled(false);
+        refreshBellChip();
+      }
+    } else {
+      // Have a subscription — refresh it on the server in case device_id changed
+      // or endpoint rotated. This is a cheap idempotent upsert.
+      await pushStoreSubscription(sub);
+    }
+  } catch(e){
+    console.error('[PUSH] health check failed:', e);
+  }
 }
 /* Snapshot of user-visible state — used to decide if a polling redraw is needed */
 function stateFingerprint(){
@@ -745,7 +993,10 @@ renderers.home = () => {
   screen.innerHTML = `
   <div style="display:flex;align-items:center;gap:10px;padding:14px 18px 6px">
     <div class="streakpill" title="day streak">🔥 ${streak}</div>
-    <div class="pointchip" style="margin-left:auto">⭐ ${state.points}</div>
+    <button id="bellChip" class="bellchip ${pushIsEnabled() ? 'on' : 'off'}" onclick="togglePushReminder()" title="Reminders for this device">
+      ${pushIsEnabled() ? '🔔' : '🔕'}
+    </button>
+    <div class="pointchip">⭐ ${state.points}</div>
   </div>
   <div class="pad fade">
     <div style="text-align:center"><div class="hero-name">Adelyn's App</div>

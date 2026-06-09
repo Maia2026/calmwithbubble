@@ -323,3 +323,27 @@
     font-family:'Nunito',sans-serif;
   }
   .tellbubble:active{transform:translateY(3px); box-shadow:0 3px 0 #5e2b86;}
+
+  /* Reminder bell chip — per-device push opt-in toggle on home */
+  .bellchip{
+    margin-left:auto;
+    border:none; cursor:pointer; padding:8px 12px; border-radius:999px;
+    font-size:18px; line-height:1;
+    transition:transform .08s, box-shadow .08s;
+  }
+  .bellchip.off{
+    background:#ece6f3; color:#7a6e8c;
+    box-shadow:0 3px 0 #b9aed0;
+  }
+  .bellchip.on{
+    background:linear-gradient(135deg,var(--orchid),var(--grape));
+    color:#fff;
+    box-shadow:0 4px 0 var(--grape-deep);
+  }
+  .bellchip:active{transform:translateY(2px); box-shadow:0 1px 0 var(--grape-deep);}
+
+  /* Fade animation for floating status messages */
+  @keyframes fade {
+    from { opacity:0; transform:translateX(-50%) translateY(-6px); }
+    to   { opacity:1; transform:translateX(-50%) translateY(0); }
+  }
