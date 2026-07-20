@@ -143,6 +143,19 @@ const Sync = (() => {
       }).sort((a,b)=>(b.ts||0)-(a.ts||0));
     }
 
+    // friendEntries, repairEntries, afterStormEntries, moodCheckIns: union by ts
+    for(const field of ['friendEntries','repairEntries','afterStormEntries','moodCheckIns']){
+      const all = [...(localS[field]||[]), ...(cloudS[field]||[])];
+      const seen = new Set();
+      out[field] = all.filter(e => {
+        const k = (e.ts||'');
+        if(seen.has(k)) return false;
+        seen.add(k); return true;
+      }).sort((a,b)=>(b.ts||0)-(a.ts||0));
+    }
+    // lastMoodCheckIn: take max
+    out.lastMoodCheckIn = Math.max(localS.lastMoodCheckIn||0, cloudS.lastMoodCheckIn||0);
+
     // unlocked items: union — once unlocked, stays unlocked
     out.owned = { ...(localS.owned||{}), ...(cloudS.owned||{}) };
 

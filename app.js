@@ -401,18 +401,19 @@ function buildReport(kind){
     })()}
 
     <h2>Making it right — repair &amp; apology practice</h2>
-    <p style="font-size:12px;color:#666">Times Adelyn worked through the "I upset someone" flow — perspective-taking and building a real apology.</p>
+    <p style="font-size:12px;color:#666">Times Adelyn worked through the "I upset someone" flow — perspective-taking and building a real apology. When her behavior involved taking over / not listening (bossiness), she also reflected on what her friend actually wanted.</p>
     ${(()=>{
       const res = (state.repairEntries||[]).filter(e => (e.ts||0) >= start).sort((a,b)=>(b.ts||0)-(a.ts||0));
       if(!res.length) return '<p>No repair entries in this period.</p>';
-      const intentLabel = { accident:'Accident', frustrated:'Frustrated → came out wrong', onpurpose:'On purpose, feels bad now' };
+      const intentLabel = { accident:'Accident', didntnotice:"Didn't notice (got carried away)", frustrated:'Frustrated → came out wrong', onpurpose:'On purpose, feels bad now' };
       const rows = res.map(e => `<tr>
         <td>${escapeHtml(new Date(e.ts).toLocaleString())}</td>
         <td>${escapeHtml(e.what||'')}</td>
         <td>${(e.feelings||[]).map(f=>escapeHtml(f)).join(', ')||'—'}</td>
+        <td>${escapeHtml(e.wanted||'—')}</td>
         <td>${escapeHtml(intentLabel[e.intent]||'—')}</td>
         <td>${escapeHtml(e.apology||'—')}</td></tr>`).join('');
-      return `<table><tr><th>When</th><th>What she did</th><th>How she thinks they felt</th><th>Was it on purpose</th><th>Her apology</th></tr>${rows}</table>`;
+      return `<table><tr><th>When</th><th>What she did</th><th>How she thinks they felt</th><th>What she thinks they wanted</th><th>Was it on purpose</th><th>Her apology</th></tr>${rows}</table>`;
     })()}
 
     <h2>After the Storm — post-anger reflections</h2>
@@ -1295,13 +1296,6 @@ renderers.home = () => {
     <div class="hello">Hi, Adelyn! 👋</div></div>
     <div class="duo" style="margin:4px auto 0">${buddy('',124)}</div>
     <div class="speech">${greeting}</div>
-    <button class="tellbubble" onclick="go('tellBubble')">
-      <span style="font-size:22px">💜</span>
-      <span style="flex:1;text-align:left">
-        <span style="font-weight:800;font-size:15px">Tell Bubble what happened</span>
-        <span style="display:block;font-weight:600;font-size:12px;opacity:0.85">Share something — good or hard</span>
-      </span>
-    </button>
     ${shouldShowMoodCheckIn() ? `
       <div class="moodcheckin">
         <div class="moodcheckin-title">💜 How are you feeling today?</div>
@@ -1331,6 +1325,13 @@ renderers.home = () => {
       <div><div class="dt">I feel it coming</div><div class="ds">I notice a warning sign</div></div></button>
     <button class="door during" onclick="go('duringStart')"><div class="emoji">🔥</div>
       <div><div class="dt">I need help NOW</div><div class="ds">I'm angry or frustrated</div></div></button>
+    <button class="tellbubble" onclick="go('tellBubble')">
+      <span style="font-size:22px">💜</span>
+      <span style="flex:1;text-align:left">
+        <span style="font-weight:800;font-size:15px">Tell Bubble what happened</span>
+        <span style="display:block;font-weight:600;font-size:12px;opacity:0.85">Share something — good or hard</span>
+      </span>
+    </button>
     <button class="door brave" onclick="go('bravePick')"><div class="emoji">🦁</div>
       <div><div class="dt">Be brave</div><div class="ds">Something feels scary</div></div></button>
     <button class="door people" onclick="go('peopleStart')"><div class="emoji">🧩</div>
@@ -1516,15 +1517,18 @@ renderers.thought = () => {
       <span class="ce">💭</span>${escapeHtml(t)}</button>`).join('')}
     <button class="moretoggle" onclick="showThoughtBox()" id="moreBtn">+ say it in my own words</button>
     <div id="morebox" style="display:none">
-      <textarea id="ownthought" placeholder="Type what ${mn} is telling you..."></textarea></div>
-    <button class="btn" onclick="thoughtNext()">Next</button>
-    <div class="skipnote">Pick the closest one — it doesn't have to be perfect. 💜</div>
+      <textarea id="ownthought" placeholder="Type what ${mn} is telling you..."></textarea>
+      <button class="btn" onclick="thoughtNext()">Use what I typed ›</button>
+    </div>
+    <div class="skipnote">Tap the closest one — or type your own. 💜</div>
   </div>`;
 };
 function showThoughtBox(){ $('morebox').style.display='block'; $('moreBtn').style.display='none'; $('ownthought').focus(); }
 function pickThought(el,i){
-  el.parentElement.querySelectorAll('.choice').forEach(c=>c.classList.remove('sel'));
-  el.classList.add('sel'); flow.thought=THOUGHTS[i];
+  // Tap a preset thought = commit that thought and advance immediately.
+  // The "say it in my own words" textarea + Next button still handle typed input.
+  flow.thought = THOUGHTS[i];
+  go('notes');
 }
 function pickOne(el){
   el.parentElement.querySelectorAll('.choice').forEach(c=>c.classList.remove('sel'));
@@ -2321,20 +2325,12 @@ function cvjDone(){
    BE THE FRIEND YOU WOULD BE — self-compassion tool
    Catch the unkind voice she uses about HERSELF, and flip it
    to how she'd talk to a friend.
-============================================================= */
 
-const FRIEND_UNKIND_STARTERS = [
-  "I'm so stupid",
-  "I can't do anything right",
-  "Nobody likes me",
-  "I'm a bad kid",
-  "I always mess up",
-  "I'm ugly",
-  "I'm dumb",
-  "Everyone is better than me",
-  "I'll never get this",
-  "I'm annoying",
-];
+   Design principle: NO prefilled examples, NO category buckets, NO scaffolds.
+   The tool never generates or suggests specific self-criticisms. If a kid
+   has one in mind, she types it. If she doesn't, "nothing unkind today" is
+   a warm, honored answer — days without an unkind voice count.
+============================================================= */
 
 renderers.beFriend = () => {
   flow.friend = {};
@@ -2345,23 +2341,35 @@ renderers.beFriend = () => {
     <div class="duo" style="margin:6px auto">${buddy('',104)}</div>
     <div class="card">
       <p>Sometimes we talk to ourselves way meaner than we would ever talk to a friend.</p>
-      <p style="margin-top:8px">Let's catch one of those mean thoughts — and flip it.</p>
+      <p style="margin-top:8px">If there's an unkind thought bugging you today, let's catch it — and flip it.</p>
     </div>
-    <div class="step-sub" style="margin-top:14px">What is the unkind thing you sometimes say (or think) about yourself?</div>
-    <textarea id="friendUnkind" placeholder="Type what your unkind voice says..." style="min-height:90px;margin-top:8px"></textarea>
-    <div class="step-sub" style="margin-top:10px">Or tap one that fits:</div>
-    <div class="chipwrap">
-      ${FRIEND_UNKIND_STARTERS.map(s => `<button class="chip" onclick="friendPickStarter(${JSON.stringify(s).replace(/"/g,'&quot;')})">
-        <span>${escapeHtml(s)}</span></button>`).join('')}
-    </div>
+    <div class="step-sub" style="margin-top:14px">What is the unkind thing that voice is saying?</div>
+    <textarea id="friendUnkind" placeholder="Type what your unkind voice says..." style="min-height:110px;margin-top:8px" autofocus></textarea>
     <button class="btn" onclick="friendNext()">Next ›</button>
+    <button class="btn ghost" onclick="friendNothingToday()">Actually, nothing unkind today</button>
     <button class="btn ghost" onclick="go('peopleStart')">Back</button>
   </div>`;
 };
 
-function friendPickStarter(text){
-  const box = $('friendUnkind');
-  if(box){ box.value = text; box.focus(); }
+/* Warm exit — she came here but there's no unkind thought.
+   That is a good thing. Days without an unkind voice count. */
+function friendNothingToday(){
+  // Award 1 point just for coming to check
+  state.points += 1;
+  state.totalPoints += 1;
+  save();
+  screen.innerHTML=`<div class="celebrate" id="celeb">
+    <div style="font-size:28px">💛 ✨ 💛</div>
+    <h2 style="color:var(--grape-deep)">Good.</h2>
+    <div class="duo" style="margin:10px 0">${buddy('happy',104)}</div>
+    <div class="card" style="background:#eaf4ec;text-align:left">
+      <p style="font-size:15px;color:var(--ink)">Days without an unkind voice count too — a lot, actually.</p>
+      <p style="font-size:14px;color:var(--grape-deep);font-weight:700;margin-top:8px">Come back anytime one shows up. I'll be here. 💜</p>
+    </div>
+    <div class="pointpop">+1 ⭐</div>
+    <button class="btn" style="max-width:260px" onclick="go('home')">Back home</button>
+  </div>`;
+  burst();
 }
 
 function friendNext(){
@@ -2393,7 +2401,7 @@ renderers.friendFlip = () => {
       <p><b>What would you say to THEM?</b></p>
       <p style="font-size:14px;margin-top:6px">You would not say "yeah, you're right." You'd say something kind and true. Type what you'd tell your friend:</p>
     </div>
-    <textarea id="friendKind" placeholder="What would you tell your friend?" style="min-height:110px;margin-top:8px"></textarea>
+    <textarea id="friendKind" placeholder="What would you tell your friend?" style="min-height:110px;margin-top:8px" autofocus></textarea>
     <button class="btn" onclick="friendFinish()">Done ✓</button>
     <button class="btn ghost" onclick="goBack()">Back</button>
   </div>`;
@@ -2430,26 +2438,42 @@ function friendFinish(){
     </div>` : ''}
     <div class="big" style="font-size:14px;margin-top:10px">Being the friend you would be — to yourself — is a real skill. It takes practice.</div>
     <div class="pointpop">+${pts} ⭐</div>
+    ${engaged ? `<button class="btn" style="max-width:260px" onclick="friendAnotherKind()">Try another kind saying 💛</button>` : ''}
     <button class="btn" style="max-width:260px" onclick="go('home')">Back home</button>
     <button class="btn ghost" style="max-width:260px" onclick="go('peopleStart')">Back to People Practice</button>
   </div>`;
   burst();
 }
 
+/* Loop back to the "what would you tell your friend?" step with the same
+   unkind thought — she can write another kind response without starting over. */
+function friendAnotherKind(){
+  go('friendFlip');
+}
+
 /* =============================================================
    I UPSET SOMEONE — perspective-taking + repair + apology
 ============================================================= */
 
+/* REPAIR_WHAT is now objects (not strings) so we can flag "takeover" items —
+   bossy/interrupting behaviors that need a "what did they actually want?" step
+   in addition to the usual perspective-taking. These four are at the top
+   because they're common for kids who feel very strongly about how something
+   should go and forget to pause and check in. */
 const REPAIR_WHAT = [
-  "I said something mean or teasing",
-  "I wouldn't share or let them play",
-  "I broke or took something of theirs",
-  "I yelled or got too rough",
-  "I left them out",
-  "I told a secret or embarrassed them",
-  "I broke a promise",
-  "I ignored them",
-  "Something else",
+  { id:'tookover',   t:"I took over and didn't let them have a turn to decide", takeover:true },
+  { id:'didnthear',  t:"I didn't stop to hear what they wanted",                takeover:true },
+  { id:'pickedall',  t:"I didn't share ideas equally — I picked all the activities", takeover:true },
+  { id:'interrupt',  t:"I interrupted them a lot",                              takeover:true },
+  { id:'meanwords',  t:"I said something mean or teasing" },
+  { id:'noshare',    t:"I wouldn't share or let them play" },
+  { id:'broketook',  t:"I broke or took something of theirs" },
+  { id:'yelled',     t:"I yelled or got too rough" },
+  { id:'leftout',    t:"I left them out" },
+  { id:'secret',     t:"I told a secret or embarrassed them" },
+  { id:'promise',    t:"I broke a promise" },
+  { id:'ignored',    t:"I ignored them" },
+  { id:'else',       t:"Something else" },
 ];
 
 const REPAIR_FEELINGS = [
@@ -2464,11 +2488,13 @@ const REPAIR_FEELINGS = [
 ];
 
 const REPAIR_INTENT = [
-  { id:'accident',   e:'🌪️', t:"It was an accident",
+  { id:'accident',    e:'🌪️', t:"It was an accident",
     response:"Accidents happen — even to kind kids. What matters now is showing you care." },
-  { id:'frustrated', e:'😤', t:"I was frustrated and it came out wrong",
+  { id:'didntnotice', e:'💫', t:"I got so into it I didn't notice",
+    response:"That's really honest. Big feelings, big excitement, or big ideas can carry us away from checking in with our friends. What matters now is you noticed — and you're doing something about it." },
+  { id:'frustrated',  e:'😤', t:"I was frustrated and it came out wrong",
     response:"The feeling was okay — this choice hurt someone. Both can be true. You can own the choice without shaming the feeling." },
-  { id:'onpurpose',  e:'😔', t:"Yes — but I feel bad about it now",
+  { id:'onpurpose',   e:'😔', t:"Yes — but I feel bad about it now",
     response:"That takes courage to admit. Feeling bad now is what LEADS you toward making it right." },
 ];
 
@@ -2484,8 +2510,8 @@ renderers.repairStart = () => {
       <p style="margin-top:8px">What matters is looking at it honestly, and making it right when we can.</p>
     </div>
     <div class="step-sub" style="margin-top:14px">What happened? What did you do?</div>
-    ${REPAIR_WHAT.map(w => `<button class="choice" onclick="repairPickWhat(${JSON.stringify(w).replace(/"/g,'&quot;')})">
-      <span class="ce">•</span>${escapeHtml(w)}</button>`).join('')}
+    ${REPAIR_WHAT.map(w => `<button class="choice" onclick="repairPickWhat('${w.id}')">
+      <span class="ce">•</span>${escapeHtml(w.t)}</button>`).join('')}
     <div class="step-sub" style="margin-top:10px">Or type it in your own words:</div>
     <textarea id="repairWhatCustom" placeholder="What happened?" style="min-height:80px"></textarea>
     <button class="btn" onclick="repairPickWhatCustom()">Use my own words ›</button>
@@ -2493,8 +2519,12 @@ renderers.repairStart = () => {
   </div>`;
 };
 
-function repairPickWhat(what){
-  flow.repair.what = what;
+function repairPickWhat(id){
+  const item = REPAIR_WHAT.find(w => w.id === id);
+  if(!item) return;
+  flow.repair.what = item.t;         // human-readable text for report
+  flow.repair.whatId = item.id;      // stable id for logic
+  flow.repair.takeover = !!item.takeover;  // flag: does she need the "what did they want?" step?
   go('repairFeelings');
 }
 function repairPickWhatCustom(){
@@ -2547,6 +2577,40 @@ function repairToggleFeeling(t){
   go('repairFeelings');
 }
 function repairNextFromFeelings(){
+  // For bossy/takeover situations, add an extra step: "What did they want?"
+  // Before the intent question, help her actively think about what her friend
+  // was hoping for. Regular items (mean words, breaking things, etc.) skip
+  // this and go straight to intent.
+  if(flow.repair.takeover) go('repairWhatWanted');
+  else go('repairIntent');
+}
+
+renderers.repairWhatWanted = () => {
+  const what = escapeHtml(flow.repair.what || '');
+  screen.innerHTML=`${topbar('repairFeelings')}
+  <div class="pad fade">
+    <span class="step-tag">WHAT DID THEY WANT? 👂</span>
+    <div class="step-title">Try to picture what your friend was hoping for.</div>
+    <div class="card" style="background:#fff3d6">
+      <p style="font-size:14px"><b>What happened:</b> ${what}</p>
+    </div>
+    <div class="duo" style="margin:6px auto">${buddy('',96)}</div>
+    <div class="card">
+      <p>Sometimes we get so excited or so sure of our idea that we forget to check what our friend wanted.</p>
+      <p style="margin-top:8px"><b>What do you think they wanted?</b> (What game, activity, turn, or way of doing it were they hoping for?)</p>
+    </div>
+    <textarea id="repairWanted" placeholder="They probably wanted..." style="min-height:90px" autofocus>${escapeHtml(flow.repair.wanted||'')}</textarea>
+    <div class="card tip" style="margin-top:12px">
+      <p>Not sure? That's a clue — a kind next step could be asking them. "Hey, what did YOU want to do?" is a real thing to say. 💜</p>
+    </div>
+    <button class="btn" onclick="repairSaveWanted()">Next ›</button>
+    <button class="btn ghost" onclick="go('peopleStart')">I'll do it in my own way</button>
+  </div>`;
+};
+
+function repairSaveWanted(){
+  const box = $('repairWanted');
+  flow.repair.wanted = box ? box.value.trim() : '';
   go('repairIntent');
 }
 
@@ -2656,6 +2720,7 @@ renderers.repairAssemble = () => {
     what: flow.repair.what || '',
     feelings: flow.repair.feelings || [],
     intent: flow.repair.intent || '',
+    wanted: flow.repair.wanted || '',   // populated only for "takeover" items (bossiness)
     apology: assembled,
     apoParts: { p1, p2, p3 },
     type: 'repair',
@@ -2695,6 +2760,7 @@ function repairFinishNoApology(){
     what: (flow.repair && flow.repair.what) || '',
     feelings: (flow.repair && flow.repair.feelings) || [],
     intent: (flow.repair && flow.repair.intent) || '',
+    wanted: (flow.repair && flow.repair.wanted) || '',
     apology: '(chose to do it in her own way)',
     apoParts: {},
     type: 'repair',
