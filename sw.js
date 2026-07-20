@@ -3,7 +3,7 @@
    Lesson 16: network-first for HTML so updates land reliably.
    Bump CACHE_VERSION on every deploy that changes cached assets.
 ============================================================= */
-const CACHE_VERSION = 'bubble-v21';
+const CACHE_VERSION = 'bubble-v22';
 const ASSETS = [
   './index.html',
   './styles.css',

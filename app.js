@@ -914,44 +914,7 @@ function showCrisisHelp(event){
   if(event) event.preventDefault();
   go('crisis');
 }
-renderers.crisis = () => {
-  screen.innerHTML=`${topbar(null)}
-  <div class="pad fade">
-    <span class="step-tag">IF YOU NEED HELP RIGHT NOW</span>
-    <div class="step-title" style="margin-top:6px">It's brave to ask for help.</div>
-    <div class="duo" style="margin:8px auto">${buddy('',96)}</div>
-    <div class="card"><p>Here are people who can talk with you any time, day or night:</p></div>
-
-    <a class="crisis-action" href="tel:988">
-      <span class="ce">📞</span>
-      <div>
-        <div class="ct">Call or text 988</div>
-        <div class="cs">Suicide &amp; Crisis Lifeline — 24/7</div>
-      </div>
-    </a>
-
-    <a class="crisis-action" href="sms:741741?body=HOME">
-      <span class="ce">💬</span>
-      <div>
-        <div class="ct">Text HOME to 741741</div>
-        <div class="cs">Crisis Text Line — 24/7</div>
-      </div>
-    </a>
-
-    <a class="crisis-action" href="tel:911">
-      <span class="ce">🚨</span>
-      <div>
-        <div class="ct">Call 911</div>
-        <div class="cs">For emergencies</div>
-      </div>
-    </a>
-
-    <div class="card tip" style="margin-top:14px">
-      <p>💜 A grown-up you trust can also help — a parent, teacher, school counselor, or any adult who cares about you.</p>
-    </div>
-    <button class="btn ghost" onclick="goBack()">Back</button>
-  </div>`;
-};
+/* renderers.crisis is defined later, after `renderers` itself is declared */
 
 function topbar(backTo){
   // backTo can still be passed for an explicit target, but default uses goBack()
@@ -1172,6 +1135,47 @@ function feelWord(v){
 }
 
 const renderers = {};
+
+/* Crisis Help screen — declared here (right after `renderers`) to avoid
+   TDZ error at load time. Called from the footer Help link. */
+renderers.crisis = () => {
+  screen.innerHTML=`${topbar(null)}
+  <div class="pad fade">
+    <span class="step-tag">IF YOU NEED HELP RIGHT NOW</span>
+    <div class="step-title" style="margin-top:6px">It's brave to ask for help.</div>
+    <div class="duo" style="margin:8px auto">${buddy('',96)}</div>
+    <div class="card"><p>Here are people who can talk with you any time, day or night:</p></div>
+
+    <a class="crisis-action" href="tel:988">
+      <span class="ce">📞</span>
+      <div>
+        <div class="ct">Call or text 988</div>
+        <div class="cs">Suicide &amp; Crisis Lifeline — 24/7</div>
+      </div>
+    </a>
+
+    <a class="crisis-action" href="sms:741741?body=HOME">
+      <span class="ce">💬</span>
+      <div>
+        <div class="ct">Text HOME to 741741</div>
+        <div class="cs">Crisis Text Line — 24/7</div>
+      </div>
+    </a>
+
+    <a class="crisis-action" href="tel:911">
+      <span class="ce">🚨</span>
+      <div>
+        <div class="ct">Call 911</div>
+        <div class="cs">For emergencies</div>
+      </div>
+    </a>
+
+    <div class="card tip" style="margin-top:14px">
+      <p>💜 A grown-up you trust can also help — a parent, teacher, school counselor, or any adult who cares about you.</p>
+    </div>
+    <button class="btn ghost" onclick="goBack()">Back</button>
+  </div>`;
+};
 
 /* ---------- HOME ---------- */
 /* ---------- Specific cheerleader greetings tied to her real activity ---------- */
