@@ -347,3 +347,78 @@
     from { opacity:0; transform:translateX(-50%) translateY(-6px); }
     to   { opacity:1; transform:translateX(-50%) translateY(0); }
   }
+
+  /* Universal app footer — copyright + Help link.
+     Small, low-contrast, present on every screen including celebrations. */
+  .appfoot{
+    margin:18px 14px 10px;
+    padding:8px 6px 4px;
+    text-align:center;
+    font-family:'Nunito',sans-serif;
+    font-size:10.5px;
+    line-height:1.4;
+    color:#a89db5;
+    border-top:1px solid #e7dff0;
+  }
+  .appfoot .copy{ display:block; }
+  .appfoot .helplink{
+    display:inline-block;
+    margin-top:3px;
+    color:#9b8aaf;
+    text-decoration:underline;
+    font-weight:700;
+    cursor:pointer;
+    padding:2px 8px;
+  }
+  .appfoot .helplink:hover{ color:var(--grape-deep); }
+
+  /* When the crisis screen is displayed, hide the footer
+     (we don't want copyright clutter on a crisis screen). */
+  body.crisis-view .appfoot{ display:none; }
+
+  /* Crisis action buttons — tappable phone/text links */
+  .crisis-action{
+    display:flex; align-items:center; gap:14px;
+    margin-top:10px; padding:16px;
+    background:#fff; border:2px solid var(--lilac);
+    border-radius:18px; color:var(--ink); text-decoration:none;
+    transition:transform .08s, box-shadow .08s;
+    box-shadow:0 4px 0 #d4c5e5;
+    font-family:'Nunito',sans-serif;
+  }
+  .crisis-action:active{ transform:translateY(2px); box-shadow:0 2px 0 #d4c5e5; }
+  .crisis-action .ce{ font-size:26px; flex-shrink:0; }
+  .crisis-action .ct{ font-weight:800; font-size:16px; color:var(--grape-deep); }
+  .crisis-action .cs{ font-weight:600; font-size:13px; color:var(--ink-soft); margin-top:2px; }
+
+  /* Daily mood check-in on home — matches Bubble's warm card style */
+  .moodcheckin{
+    margin-top:14px; padding:16px 14px;
+    background:#fff; border-radius:22px;
+    box-shadow:0 8px 22px -14px rgba(106,42,145,.5);
+  }
+  .moodcheckin-title{
+    text-align:center; font-family:'Baloo 2',cursive; font-size:17px;
+    font-weight:800; color:var(--grape-deep); margin-bottom:12px;
+  }
+  .moodcheckin-buttons{
+    display:grid; grid-template-columns:repeat(3,1fr); gap:8px;
+  }
+  .moodbtn{
+    display:flex; flex-direction:column; align-items:center; gap:4px;
+    padding:11px 4px;
+    background:linear-gradient(135deg,#f7edfc,#eddaf7);
+    border:none; border-radius:16px;
+    cursor:pointer; font-family:'Baloo 2',cursive;
+    box-shadow:0 4px 0 #d4c5e5;
+    transition:transform .08s, box-shadow .08s;
+  }
+  .moodbtn span:first-child{ font-size:26px; line-height:1; }
+  .moodbtn .ml{ font-size:12px; font-weight:700; color:var(--grape-deep); }
+  .moodbtn:active{ transform:translateY(2px); box-shadow:0 2px 0 #d4c5e5; }
+  .moodskip{
+    display:block; margin:12px auto 0;
+    background:none; border:none; color:var(--ink-soft);
+    font-family:'Baloo 2',cursive; font-weight:700; font-size:13px;
+    cursor:pointer; padding:6px 12px; border-radius:12px;
+  }

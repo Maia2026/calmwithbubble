@@ -1026,7 +1026,6 @@ const TOOLS=[
      'Hold an ice cube or something cold in your hand ❄️']},
   {id:'mantra',e:'💜',name:'Say my mantra',kind:'mantra',desc:'Tell myself something strong.'},
   {id:'faith',e:'🙏',name:'Prayer or verse',kind:'faith',desc:'A calm prayer or a verse I love.'},
-  {id:'detective',e:'🔍',name:'Be a thought detective',kind:'detective',desc:'Check if a worried thought is really true.'},
   {id:'distract',e:'🎈',name:'Distract me',kind:'distract',desc:'Take my mind off it — facts, jokes, bubbles, math.'},
   {id:'express',e:'✏️',name:'Get the feeling out',kind:'express',desc:'A safe way to let the big feeling out.'},
 ];
@@ -1305,7 +1304,7 @@ renderers.home = () => {
     </button>
     ${shouldShowMoodCheckIn() ? `
       <div class="moodcheckin">
-        <div class="moodcheckin-title">How are you feeling today?</div>
+        <div class="moodcheckin-title">💜 How are you feeling today?</div>
         <div class="moodcheckin-buttons">
           <button class="moodbtn" onclick="pickMood('great')"><span>😄</span><span class="ml">Great</span></button>
           <button class="moodbtn" onclick="pickMood('good')"><span>🙂</span><span class="ml">Good</span></button>
@@ -1332,8 +1331,6 @@ renderers.home = () => {
       <div><div class="dt">I feel it coming</div><div class="ds">I notice a warning sign</div></div></button>
     <button class="door during" onclick="go('duringStart')"><div class="emoji">🔥</div>
       <div><div class="dt">I need help NOW</div><div class="ds">I'm angry or frustrated</div></div></button>
-    <button class="door after" onclick="go('afterStart')"><div class="emoji">📖</div>
-      <div><div class="dt">Something happened</div><div class="ds">Look back at an angry moment</div></div></button>
     <button class="door brave" onclick="go('bravePick')"><div class="emoji">🦁</div>
       <div><div class="dt">Be brave</div><div class="ds">Something feels scary</div></div></button>
     <button class="door people" onclick="go('peopleStart')"><div class="emoji">🧩</div>
@@ -1458,7 +1455,7 @@ renderers.aloneTime = () => {
 };
 renderers.duringStart=()=>{
   flow={door:'during'};
-  go('duringRate');
+  go('duringRate', null, {back:true});
 };
 
 /* ---------- DURING: super-simple opening rating ---------- */
@@ -1506,7 +1503,7 @@ function bubbleTakeover(){
   flow.tool = TOOLS.find(t=>t.id==='dragon');
   go('breathe',{next:'afterTool'});
 }
-renderers.afterStart =()=>{ flow={door:'after'};  go('rate',{when:'then'}); };
+renderers.afterStart =()=>{ flow={door:'after'};  go('rate',{when:'then'},{back:true}); };
 
 /* ---------- THOUGHT ---------- */
 renderers.thought = () => {
@@ -1562,15 +1559,13 @@ function notesSkip(){ flow.notes=''; go('toolPick'); }
 
 /* ---------- TOOL PICK ---------- */
 renderers.toolPick = () => {
-  const th=(flow.thought||'').toLowerCase();
-  const targeted=/me|purpose|fair|want me|my way/.test(th);
   screen.innerHTML=`${topbar(null)}
   <div class="pad fade"><span class="step-tag">PICK A TOOL</span>
     <div class="step-title">What will help right now?</div>
-    <div class="step-sub">${targeted?'That sounds like '+escapeHtml(state.monsterName||'the anger monster')+' guessing the worst — "thought detective" could really help. Movement is great too!':'These all work. Moving your body is a great one for you!'}</div>
-    ${TOOLS.map(t=>`<button class="choice ${targeted&&t.id==='detective'?'sel':''}" onclick="pickTool('${t.id}')">
+    <div class="step-sub">These all work. Moving your body is a great one for you!</div>
+    ${TOOLS.map(t=>`<button class="choice" onclick="pickTool('${t.id}')">
       <span class="ce">${t.e}</span><span style="flex:1">${escapeHtml(t.name)}
-      <div style="font-size:12px;color:${targeted&&t.id==='detective'?'#fff':'var(--ink-soft)'};font-weight:600">${escapeHtml(t.desc)}</div>
+      <div style="font-size:12px;color:var(--ink-soft);font-weight:600">${escapeHtml(t.desc)}</div>
       </span></button>`).join('')}
   </div>`;
 };
@@ -2156,17 +2151,21 @@ renderers.peopleStart = () => {
   screen.innerHTML=`${topbar('home')}
   <div class="pad fade">
     <span class="step-tag">PEOPLE PRACTICE 🧩</span>
-    <div class="step-title">Reading people — your superpower</div>
+    <div class="step-title">Detective work — reading people and thoughts</div>
     <div class="duo" style="margin:6px auto">${buddy('',104)}</div>
-    <div class="card"><p>When something happens with friends, our mind makes a fast <b>guess</b> about why. Sometimes ${escapeHtml(state.monsterName||'the anger monster')} jumps in with "they were being mean!" — but lots of times it is something else entirely.</p></div>
+    <div class="card"><p>Our brain makes fast <b>guesses</b> — about other people, and about our own worried or mad thoughts. A good detective checks if they're really true.</p></div>
     <div class="step-sub" style="margin-top:14px">Pick what you want to practice today:</div>
     <button class="door before" style="margin-top:8px" onclick="peopleRound()">
       <div class="emoji">🧩</div>
-      <div><div class="dt">Sort situations</div><div class="ds">Mean? joke? accident?</div></div>
+      <div><div class="dt">People Detective</div><div class="ds">Mean? joke? accident?</div></div>
+    </button>
+    <button class="door brave" style="margin-top:10px" onclick="go('detective')">
+      <div class="emoji">🔎</div>
+      <div><div class="dt">Thought Detective</div><div class="ds">Check if a worried thought is really true</div></div>
     </button>
     <button class="door after" style="margin-top:10px" onclick="go('commentVsJudgment')">
       <div class="emoji">🗣️</div>
-      <div><div class="dt">Comment or judgment?</div><div class="ds">Is someone noticing — or judging?</div></div>
+      <div><div class="dt">Comment or Judgment?</div><div class="ds">Is someone noticing — or judging?</div></div>
     </button>
     <button class="door gratitude" style="margin-top:10px" onclick="go('beFriend')">
       <div class="emoji">💛</div>
@@ -2908,7 +2907,7 @@ const STORM_CONTROLLED = [
 
 renderers.afterStormStart = () => {
   flow.storm = { step:0 };
-  go('afterStormWhere');
+  go('afterStormWhere', null, {back:true});
 };
 
 renderers.afterStormWhere = () => {
@@ -3326,6 +3325,8 @@ const TELLBUBBLE_PATHS = [
   { id:'else',      e:'🌪️', label:"Something else is bugging me",
     prompt:"Tell me what's bugging you.",
     placeholder:"What happened? How are you feeling?" },
+  { id:'lookback',  e:'📖', label:"Look back at an angry moment",
+    structuredReflection: true },
 ];
 const CONTROLLED_CHIPS = [
   'I tried hard',
@@ -3361,6 +3362,13 @@ renderers.tellBubble = () => {
 function tellBubblePath(id){
   const path = TELLBUBBLE_PATHS.find(p=>p.id===id);
   if(!path) return;
+  // "Look back at an angry moment" — route into the structured after-door
+  // reflection flow (rating + 5 questions + do-over), which is more thorough
+  // than the free-form Tell Bubble chat.
+  if(path.structuredReflection){
+    go('afterStart');
+    return;
+  }
   flow.tellBubble = { pathId:id };
   go('tellBubbleStory');
 }
