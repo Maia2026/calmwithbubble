@@ -52,6 +52,11 @@ function freshState(){
     tellBubbles: [],          // {ts, path, text, controlled, type:'tellbubble'} entries
     detectiveEntries: [],     // {ts, isPerson, answers:{q1..q5: text}, engagedCount} entries
     lastAppOpenedAt: 0,       // ms timestamp of most recent app open — used by Stage 2 push cron
+    friendEntries: [],        // "Be the friend you would be" self-compassion entries
+    repairEntries: [],        // "I upset someone" repair/apology flow entries
+    afterStormEntries: [],    // "After the Storm" reflection entries logged after helpNow
+    moodCheckIns: [],         // daily mood check-in entries {ts, mood}
+    lastMoodCheckIn: 0,       // ms timestamp of most recent mood check-in for daily gating
     customMantras: [],
     customVerses: [],
     parentNotes: [],
@@ -383,6 +388,60 @@ function buildReport(kind){
       return `<table><tr><th>When</th><th>What about</th><th>What Adelyn wrote</th><th>What she said she controlled</th></tr>${rows}</table>`;
     })()}
 
+    <h2>Be the friend you would be — self-compassion practice</h2>
+    <p style="font-size:12px;color:#666">Times Adelyn caught an unkind voice about herself, and practiced flipping it to what she'd say to a friend.</p>
+    ${(()=>{
+      const fes = (state.friendEntries||[]).filter(e => (e.ts||0) >= start).sort((a,b)=>(b.ts||0)-(a.ts||0));
+      if(!fes.length) return '<p>No self-compassion entries in this period.</p>';
+      const rows = fes.map(e => `<tr>
+        <td>${escapeHtml(new Date(e.ts).toLocaleString())}</td>
+        <td>${escapeHtml(e.unkind||'')}</td>
+        <td>${escapeHtml(e.kind||'(not written)')}</td></tr>`).join('');
+      return `<table><tr><th>When</th><th>Unkind voice said</th><th>What she'd tell a friend</th></tr>${rows}</table>`;
+    })()}
+
+    <h2>Making it right — repair &amp; apology practice</h2>
+    <p style="font-size:12px;color:#666">Times Adelyn worked through the "I upset someone" flow — perspective-taking and building a real apology.</p>
+    ${(()=>{
+      const res = (state.repairEntries||[]).filter(e => (e.ts||0) >= start).sort((a,b)=>(b.ts||0)-(a.ts||0));
+      if(!res.length) return '<p>No repair entries in this period.</p>';
+      const intentLabel = { accident:'Accident', frustrated:'Frustrated → came out wrong', onpurpose:'On purpose, feels bad now' };
+      const rows = res.map(e => `<tr>
+        <td>${escapeHtml(new Date(e.ts).toLocaleString())}</td>
+        <td>${escapeHtml(e.what||'')}</td>
+        <td>${(e.feelings||[]).map(f=>escapeHtml(f)).join(', ')||'—'}</td>
+        <td>${escapeHtml(intentLabel[e.intent]||'—')}</td>
+        <td>${escapeHtml(e.apology||'—')}</td></tr>`).join('');
+      return `<table><tr><th>When</th><th>What she did</th><th>How she thinks they felt</th><th>Was it on purpose</th><th>Her apology</th></tr>${rows}</table>`;
+    })()}
+
+    <h2>After the Storm — post-anger reflections</h2>
+    <p style="font-size:12px;color:#666">After a "I need help NOW" moment, if Adelyn chose to reflect, this is what she wrote. Includes where/who/trigger/do-over/what she controlled.</p>
+    ${(()=>{
+      const ases = (state.afterStormEntries||[]).filter(e => (e.ts||0) >= start).sort((a,b)=>(b.ts||0)-(a.ts||0));
+      if(!ases.length) return '<p>No After the Storm reflections in this period.</p>';
+      const rows = ases.map(e => `<tr>
+        <td>${escapeHtml(new Date(e.ts).toLocaleString())}</td>
+        <td>${escapeHtml(e.where||'—')}</td>
+        <td>${escapeHtml(e.who||'—')}</td>
+        <td>${escapeHtml(e.trigger||'—')}</td>
+        <td>${escapeHtml(e.doover||'—')}</td>
+        <td>${(e.controlled||[]).map(c=>escapeHtml(c)).join(', ')||'—'}</td></tr>`).join('');
+      return `<table><tr><th>When</th><th>Where</th><th>Who</th><th>Trigger</th><th>Her do-over</th><th>What she controlled</th></tr>${rows}</table>`;
+    })()}
+
+    <h2>Daily mood check-ins</h2>
+    <p style="font-size:12px;color:#666">Adelyn's optional daily "How are you feeling today?" check-in on the home screen.</p>
+    ${(()=>{
+      const ms = (state.moodCheckIns||[]).filter(e => (e.ts||0) >= start).sort((a,b)=>(b.ts||0)-(a.ts||0));
+      if(!ms.length) return '<p>No mood check-ins in this period.</p>';
+      const label = { great:'😄 Great', good:'🙂 Good', meh:'😐 Meh', sad:'😢 Sad', worried:'😟 Worried', mad:'😠 Mad' };
+      const rows = ms.map(e => `<tr>
+        <td>${escapeHtml(new Date(e.ts).toLocaleString())}</td>
+        <td>${escapeHtml(label[e.mood]||e.mood||'—')}</td></tr>`).join('');
+      return `<table><tr><th>When</th><th>Mood</th></tr>${rows}</table>`;
+    })()}
+
     <h2>Parent observations</h2>
     <p style="font-size:12px;color:#666">Context added by parent in the parent zone. Hidden from Adelyn.</p>
     ${parentNoteList
@@ -408,6 +467,14 @@ function buildReport(kind){
     <p class="muted" style="margin-top:20px">This is home-tracked data entered by a child and parent.
        It is meant to support — not replace — clinical assessment. All values are self-reported
        in the moment unless noted as estimated.</p>
+
+    <hr style="margin-top:24px;border:none;border-top:1px solid #ddd">
+    <p style="margin-top:14px;font-size:11px;color:#666;line-height:1.5">
+      This report is generated by Bubble (part of the Brave Battle platform), provided by Brave Kids United, Inc.
+      It contains the child's self-reported data and is intended to support — not replace — clinical assessment.
+      Brave Kids United, Inc. is not a licensed mental health provider. © 2026 Brave Kids United, Inc.
+    </p>
+
     <div style="margin-top:18px;display:flex;gap:10px;flex-wrap:wrap">
       <button onclick="window.print()" style="padding:10px 18px;font-size:15px;cursor:pointer">📄 Print / Save as PDF</button>
       <button onclick="window.__emailReport()" style="padding:10px 18px;font-size:15px;cursor:pointer;background:#8b3fb5;color:#fff;border:none;border-radius:6px">📧 Email to therapist</button>
@@ -630,6 +697,51 @@ function getDeviceId(){
   }
 }
 
+/* Send a test notification to all subscribed devices.
+   Called from the parent zone "Send test notification" button.
+   Invokes the send-reminders Edge Function with test:true so it
+   bypasses the hour check and the recent-use check. */
+async function sendTestReminder(){
+  const result = $('testResult');
+  if(result){ result.textContent = 'Sending...'; result.style.color = 'var(--ink-soft)'; }
+  if(typeof SUPABASE_URL === 'undefined' || typeof SUPABASE_ANON_KEY === 'undefined'){
+    if(result){ result.textContent = '❌ Supabase not configured.'; result.style.color = '#d8334a'; }
+    return;
+  }
+  try {
+    const res = await fetch(SUPABASE_URL + '/functions/v1/send-reminders', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify({ test: true }),
+    });
+    const data = await res.json().catch(() => ({}));
+    console.log('[PUSH] test result:', data);
+    if(!res.ok || !data.ok){
+      if(result){
+        result.textContent = `❌ Failed (HTTP ${res.status}). ${data.error || ''}`;
+        result.style.color = '#d8334a';
+      }
+      return;
+    }
+    if(result){
+      if(data.sent > 0){
+        result.textContent = `✅ Sent to ${data.sent} device${data.sent>1?'s':''}. Check the device(s) within ~30 seconds.`;
+        result.style.color = '#1f9d77';
+      } else {
+        result.textContent = '⚠️ No subscribed devices found. Enable reminders on a device first (tap the bell).';
+        result.style.color = '#c8530f';
+      }
+    }
+  } catch(e){
+    console.error('[PUSH] test error:', e);
+    if(result){ result.textContent = '❌ Network error. Check the console for details.'; result.style.color = '#d8334a'; }
+  }
+}
+
 /* Update just the bell chip without redrawing the whole home screen */
 function refreshBellChip(){
   const el = document.getElementById('bellChip');
@@ -759,12 +871,16 @@ let navStack = []; // history of {view, data} for back button
 let cachedGreeting = null;  // sticky per home visit — set on entry, cleared on leave
 
 function go(view, data, opts){
+  const prevView = currentView;
   // clear cached greeting when we enter home from somewhere else (fresh visit)
   // (polling redraws call go('home') too but currentView is already 'home', so cache is kept)
   if(view === 'home' && currentView !== 'home') cachedGreeting = null;
   // stop bubble animation if we're leaving that screen
   if(currentView === 'distractBubbles' && view !== 'distractBubbles'){
     if(typeof stopBubbleAnimation === 'function') stopBubbleAnimation();
+  }
+  if(currentView === 'distractMathBubbles' && view !== 'distractMathBubbles'){
+    if(typeof stopMathBubbleAnimation === 'function') stopMathBubbleAnimation();
   }
   // push current onto stack unless this is a back-nav or going home (reset)
   if(!opts || !opts.back){
@@ -776,8 +892,15 @@ function go(view, data, opts){
   }
   currentView = view;
   lastData = data || {};
+  // Hide the universal footer on the crisis screen (per Christina's spec —
+  // we don't want copyright on a crisis screen).
+  document.body.classList.toggle('crisis-view', view === 'crisis');
+  // Preserve scroll position on same-screen re-renders (e.g., chip toggles);
+  // reset it when navigating to a different screen.
+  const sameScreen = (prevView === view) && (view === 'repairFeelings' || view === 'afterStormControlled');
+  const prevScroll = sameScreen ? (screen.scrollTop || 0) : 0;
   renderers[view](data||{});
-  screen.scrollTop = 0;
+  screen.scrollTop = prevScroll;
 }
 let lastData = {};
 function goBack(){
@@ -785,6 +908,50 @@ function goBack(){
   const prev = navStack.pop();
   go(prev.view, prev.data, {back:true});
 }
+
+/* ---------- Crisis Help — opened from the footer "Help" link ---------- */
+function showCrisisHelp(event){
+  if(event) event.preventDefault();
+  go('crisis');
+}
+renderers.crisis = () => {
+  screen.innerHTML=`${topbar(null)}
+  <div class="pad fade">
+    <span class="step-tag">IF YOU NEED HELP RIGHT NOW</span>
+    <div class="step-title" style="margin-top:6px">It's brave to ask for help.</div>
+    <div class="duo" style="margin:8px auto">${buddy('',96)}</div>
+    <div class="card"><p>Here are people who can talk with you any time, day or night:</p></div>
+
+    <a class="crisis-action" href="tel:988">
+      <span class="ce">📞</span>
+      <div>
+        <div class="ct">Call or text 988</div>
+        <div class="cs">Suicide &amp; Crisis Lifeline — 24/7</div>
+      </div>
+    </a>
+
+    <a class="crisis-action" href="sms:741741?body=HOME">
+      <span class="ce">💬</span>
+      <div>
+        <div class="ct">Text HOME to 741741</div>
+        <div class="cs">Crisis Text Line — 24/7</div>
+      </div>
+    </a>
+
+    <a class="crisis-action" href="tel:911">
+      <span class="ce">🚨</span>
+      <div>
+        <div class="ct">Call 911</div>
+        <div class="cs">For emergencies</div>
+      </div>
+    </a>
+
+    <div class="card tip" style="margin-top:14px">
+      <p>💜 A grown-up you trust can also help — a parent, teacher, school counselor, or any adult who cares about you.</p>
+    </div>
+    <button class="btn ghost" onclick="goBack()">Back</button>
+  </div>`;
+};
 
 function topbar(backTo){
   // backTo can still be passed for an explicit target, but default uses goBack()
@@ -888,6 +1055,7 @@ const TOOLS=[
    ideas:['5 things you see, 4 you hear, 3 you can touch 👀','Count slowly backwards from 20 🔢',
      'Name every color you can find in the room 🌈','Picture your calm happy place 🏖️',
      'Blow slow pretend bubbles 🫧']},
+  {id:'grounding',e:'👋',name:'5-4-3-2-1 grounding',kind:'grounding',desc:'A step-by-step way to bring your body back.'},
   {id:'dragon',e:'🐉',name:'Dragon breath',kind:'breath',desc:'Big slow breaths to cool down.'},
   {id:'water',e:'🧊',name:'Cold water',kind:'list',desc:'A cold sip resets your body fast.',
    ideas:['Sip cold water slowly and feel it cool you down 🧊',
@@ -915,6 +1083,54 @@ const THOUGHTS=['They are talking about me','She did that on purpose','Nobody is
   "They don't want me around",'I never get my way'];
 const FEARS=[{e:'🌙',t:'The dark / nighttime'},{e:'⛈️',t:'Thunderstorms'},{e:'🔊',t:'Loud noises'},
   {e:'🎢',t:'Roller coasters'},{e:'🐛',t:'Bugs'},{e:'🧍',t:'Being alone'}];
+
+/* Fear-specific ladders — 5 rungs each, small-to-bigger tiny steps.
+   The kid picks any rung she's willing to try. Never has to pick the top. */
+const FEAR_LADDERS = {
+  'The dark / nighttime': [
+    'Talk about the dark with a grown-up 💬',
+    'Look at a picture of a dark room 🖼️',
+    'Turn off just ONE light for 30 seconds ⏱️',
+    'Sit in a dim room with someone next to you 🌒',
+    'Sit in the dark for 1 minute with a light close by 🌑',
+  ],
+  'Thunderstorms': [
+    'Talk about storms with someone 💬',
+    'Watch a video of a gentle rainstorm 🌧️',
+    'Count the seconds between lightning and thunder ⏱️',
+    'Read a cozy book while it storms outside 📖',
+    'Watch the storm from a safe spot with a grown-up 🪟',
+  ],
+  'Loud noises': [
+    'Talk about the sound with a grown-up 💬',
+    'Listen to a quiet version of the sound (video, low volume) 🔉',
+    'Wear earbuds and let a grown-up play the sound 🎧',
+    'Be in the room where the sound might happen (with someone) 🚪',
+    'Try being near the sound for just 30 seconds ⏱️',
+  ],
+  'Roller coasters': [
+    'Talk about coasters with someone who likes them 💬',
+    'Watch a video of a small coaster (POV) 🎥',
+    'Watch other kids ride one at a park 👀',
+    'Ride a small, gentle ride first 🎡',
+    'Try a bigger ride with someone next to you 🎢',
+  ],
+  'Bugs': [
+    'Talk about the bug with someone 💬',
+    'Look at a picture of the bug 🖼️',
+    'Watch a video of the bug from far away 🎥',
+    'Be in the same room as a bug (in a jar or far away) 🫙',
+    'Get close to a bug outside with a grown-up 🌱',
+  ],
+  'Being alone': [
+    'Be alone in your room for 1 minute with the door open 🚪',
+    'Be alone for 2 minutes while a grown-up is nearby 🏠',
+    'Play alone for 5 minutes 🎨',
+    'Stay in one room while a grown-up is in another 🚪',
+    'Be alone with a cozy plan (music, book, snack) 💜',
+  ],
+};
+
 const AFTER_Q=[
   {tag:'WHERE WERE YOU?',q:'Where did it happen?',type:'chips',
    chips:['Home 🏠','My room 🛏️','School 🏫','In the car 🚗',"A friend's house 🏡",
@@ -981,6 +1197,79 @@ function bubbleGreeting(streak, u){
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
+/* Daily mood check-in helpers.
+   Only shows once per day. She can skip; skip counts as "seen for today"
+   so we don't nag repeatedly. */
+function shouldShowMoodCheckIn(){
+  const last = state.lastMoodCheckIn || 0;
+  if(!last) return true;
+  // Compare local calendar day
+  const now = new Date();
+  const lastDate = new Date(last);
+  return now.getFullYear() !== lastDate.getFullYear()
+      || now.getMonth() !== lastDate.getMonth()
+      || now.getDate() !== lastDate.getDate();
+}
+
+function pickMood(mood){
+  if(!state.moodCheckIns) state.moodCheckIns = [];
+  state.moodCheckIns.unshift({ ts: Date.now(), mood, type:'mood' });
+  state.lastMoodCheckIn = Date.now();
+  // Award 1 point for checking in
+  state.points += 1;
+  state.totalPoints += 1;
+  save();
+  // Gentle routing based on mood
+  const hardMoods = ['sad','worried','mad'];
+  const goodMoods = ['great','good'];
+  if(hardMoods.includes(mood)){
+    // Show a gentle acknowledgment and offer help
+    const moodWord = { sad:'sad', worried:'worried', mad:'mad' }[mood];
+    screen.innerHTML=`${topbar('home')}
+    <div class="pad fade" style="text-align:center">
+      <span class="step-tag">THANK YOU FOR TELLING ME 💜</span>
+      <div class="step-title" style="margin-top:14px">Bubble hears you.</div>
+      <div class="duo" style="margin:12px auto">${buddy('',108)}</div>
+      <div class="card"><p>Feeling ${moodWord} is real. Would you like to work on it together?</p></div>
+      <button class="btn" onclick="go('duringStart')">Yes — I need help now 🔥</button>
+      <button class="btn ghost" onclick="go('gratitude')">Maybe some Sunshine ☀️</button>
+      <button class="btn ghost" onclick="go('home')">Just back home 💜</button>
+      <div class="pointpop">+1 ⭐</div>
+    </div>`;
+  } else if(goodMoods.includes(mood)){
+    const moodWord = { great:'great', good:'good' }[mood];
+    screen.innerHTML=`${topbar('home')}
+    <div class="pad fade" style="text-align:center">
+      <span class="step-tag">YAY! 🌟</span>
+      <div class="step-title" style="margin-top:14px">I'm so glad you feel ${moodWord}!</div>
+      <div class="duo" style="margin:12px auto">${buddy('happy',108)}</div>
+      <div class="card"><p>Want to notice the good things while you're feeling this way?</p></div>
+      <button class="btn" onclick="go('gratitude')">Sunshine ☀️</button>
+      <button class="btn ghost" onclick="go('home')">Just back home 💜</button>
+      <div class="pointpop">+1 ⭐</div>
+    </div>`;
+  } else {
+    // 'meh' — no routing, just acknowledge
+    screen.innerHTML=`${topbar('home')}
+    <div class="pad fade" style="text-align:center">
+      <span class="step-tag">THANK YOU FOR TELLING ME 💜</span>
+      <div class="step-title" style="margin-top:14px">Meh days count too.</div>
+      <div class="duo" style="margin:12px auto">${buddy('',108)}</div>
+      <div class="card"><p>Sometimes we just feel ordinary. That's okay. I'm here if you need me.</p></div>
+      <button class="btn" onclick="go('home')">Back home 💜</button>
+      <div class="pointpop">+1 ⭐</div>
+    </div>`;
+  }
+  burst();
+}
+
+function skipMoodCheckIn(){
+  // Mark today as "seen" so it doesn't reappear later today
+  state.lastMoodCheckIn = Date.now();
+  save();
+  go('home');
+}
+
 renderers.home = () => {
   const streak = currentStreak();
   const u = usageCounts();
@@ -1010,6 +1299,20 @@ renderers.home = () => {
         <span style="display:block;font-weight:600;font-size:12px;opacity:0.85">Share something — good or hard</span>
       </span>
     </button>
+    ${shouldShowMoodCheckIn() ? `
+      <div class="moodcheckin">
+        <div class="moodcheckin-title">How are you feeling today?</div>
+        <div class="moodcheckin-buttons">
+          <button class="moodbtn" onclick="pickMood('great')"><span>😄</span><span class="ml">Great</span></button>
+          <button class="moodbtn" onclick="pickMood('good')"><span>🙂</span><span class="ml">Good</span></button>
+          <button class="moodbtn" onclick="pickMood('meh')"><span>😐</span><span class="ml">Meh</span></button>
+          <button class="moodbtn" onclick="pickMood('sad')"><span>😢</span><span class="ml">Sad</span></button>
+          <button class="moodbtn" onclick="pickMood('worried')"><span>😟</span><span class="ml">Worried</span></button>
+          <button class="moodbtn" onclick="pickMood('mad')"><span>😠</span><span class="ml">Mad</span></button>
+        </div>
+        <button class="moodskip" onclick="skipMoodCheckIn()">Not today</button>
+      </div>
+    ` : ''}
     ${note?`<div class="parentnote" onclick="dismissNote()">
       <div style="font-weight:800;font-size:12px;color:var(--grape);letter-spacing:.5px">💌 NEW NOTE FROM MOM/DAD</div>
       <div style="font-weight:700;font-size:15px;color:var(--ink);margin-top:3px">${escapeHtml(note.text)}</div>
@@ -1274,6 +1577,7 @@ function pickTool(id){
   else if(tool.kind==='faith') go('faith');
   else if(tool.kind==='detective') go('detective');
   else if(tool.kind==='distract') go('distract');
+  else if(tool.kind==='grounding') go('grounding');
   else if(tool.kind==='express') go('express');
   else go('toolList',{tool});
 }
@@ -1790,13 +2094,18 @@ renderers.braveStep = () => {
 };
 function braveAfterBreath(){ go('braveDo'); }
 renderers.braveDo = () => {
+  // Pull the specific ladder for the fear she picked, if we have one.
+  // Fall back to the generic tiny steps if none matches.
+  const genericSteps = ['Talk about it with someone I trust','Look at a picture of it','Get a little closer for 10 seconds',
+       'Try it with someone next to me','Make a cozy plan for next time'];
+  const ladder = (flow.fear && FEAR_LADDERS[flow.fear]) || genericSteps;
+  const isSpecific = !!(flow.fear && FEAR_LADDERS[flow.fear]);
   screen.innerHTML=`${topbar(null)}
-  <div class="pad fade"><span class="step-tag">YOUR BRAVE STEP</span>
+  <div class="pad fade"><span class="step-tag">YOUR BRAVE LADDER 🪜</span>
     <div class="step-title">Pick one tiny step</div>
-    <div class="step-sub">Not the whole scary thing — just a small next step you choose.</div>
-    ${['Talk about it with someone I trust','Look at a picture of it','Get a little closer for 10 seconds',
-       'Try it with someone next to me','Make a cozy plan for next time']
-      .map(t=>`<button class="choice" onclick="pickOne(this)"><span class="ce">🦁</span>${escapeHtml(t)}</button>`).join('')}
+    ${isSpecific ? `<div class="step-sub">These are little steps for <b>${escapeHtml(flow.fear)}</b>. Small to big — pick any one you feel ready for.</div>`
+                 : `<div class="step-sub">Not the whole scary thing — just a small next step you choose.</div>`}
+    ${ladder.map(t=>`<button class="choice" onclick="pickOne(this)"><span class="ce">🦁</span>${escapeHtml(t)}</button>`).join('')}
     <button class="btn go" onclick="go('rate',{when:'after'})">I did my brave step! ✅</button>
     <div class="skipnote">It's okay if you're not ready today. Coming back is brave too. 💜</div>
   </div>`;
@@ -1854,6 +2163,14 @@ renderers.peopleStart = () => {
     <button class="door after" style="margin-top:10px" onclick="go('commentVsJudgment')">
       <div class="emoji">🗣️</div>
       <div><div class="dt">Comment or judgment?</div><div class="ds">Is someone noticing — or judging?</div></div>
+    </button>
+    <button class="door gratitude" style="margin-top:10px" onclick="go('beFriend')">
+      <div class="emoji">💛</div>
+      <div><div class="dt">Be the friend you would be!</div><div class="ds">Catch the unkind voice about yourself</div></div>
+    </button>
+    <button class="door during" style="margin-top:10px" onclick="go('repairStart')">
+      <div class="emoji">🤝</div>
+      <div><div class="dt">I upset someone</div><div class="ds">Understand, and make it right</div></div>
     </button>
     <div class="card tip" style="margin-top:14px"><p>💜 "That was actually unkind" is always okay to pick. If it WAS unkind, your feelings are right — and we practice what to do about it too.</p></div>
   </div>`;
@@ -1993,6 +2310,403 @@ function cvjDone(){
     <div class="big" style="margin-top:10px;font-size:13px">The more you practice, the more often you will hear a comment as a comment — not an attack.</div>
     <button class="btn" style="max-width:260px" onclick="go('home')">Back home</button>
     <button class="btn ghost" style="max-width:260px" onclick="go('commentVsJudgment')">Practice again 🗣️</button>
+  </div>`;
+  burst();
+}
+
+/* =============================================================
+   BE THE FRIEND YOU WOULD BE — self-compassion tool
+   Catch the unkind voice she uses about HERSELF, and flip it
+   to how she'd talk to a friend.
+============================================================= */
+
+const FRIEND_UNKIND_STARTERS = [
+  "I'm so stupid",
+  "I can't do anything right",
+  "Nobody likes me",
+  "I'm a bad kid",
+  "I always mess up",
+  "I'm ugly",
+  "I'm dumb",
+  "Everyone is better than me",
+  "I'll never get this",
+  "I'm annoying",
+];
+
+renderers.beFriend = () => {
+  flow.friend = {};
+  screen.innerHTML=`${topbar('peopleStart')}
+  <div class="pad fade">
+    <span class="step-tag">BE THE FRIEND YOU WOULD BE 💛</span>
+    <div class="step-title">The voice you use about YOU</div>
+    <div class="duo" style="margin:6px auto">${buddy('',104)}</div>
+    <div class="card">
+      <p>Sometimes we talk to ourselves way meaner than we would ever talk to a friend.</p>
+      <p style="margin-top:8px">Let's catch one of those mean thoughts — and flip it.</p>
+    </div>
+    <div class="step-sub" style="margin-top:14px">What is the unkind thing you sometimes say (or think) about yourself?</div>
+    <textarea id="friendUnkind" placeholder="Type what your unkind voice says..." style="min-height:90px;margin-top:8px"></textarea>
+    <div class="step-sub" style="margin-top:10px">Or tap one that fits:</div>
+    <div class="chipwrap">
+      ${FRIEND_UNKIND_STARTERS.map(s => `<button class="chip" onclick="friendPickStarter(${JSON.stringify(s).replace(/"/g,'&quot;')})">
+        <span>${escapeHtml(s)}</span></button>`).join('')}
+    </div>
+    <button class="btn" onclick="friendNext()">Next ›</button>
+    <button class="btn ghost" onclick="go('peopleStart')">Back</button>
+  </div>`;
+};
+
+function friendPickStarter(text){
+  const box = $('friendUnkind');
+  if(box){ box.value = text; box.focus(); }
+}
+
+function friendNext(){
+  const box = $('friendUnkind');
+  const unkind = box ? box.value.trim() : '';
+  if(!unkind){
+    // Gentle nudge — no shame
+    if(box){
+      box.style.borderColor = '#d8334a';
+      setTimeout(() => { if(box) box.style.borderColor = ''; }, 1500);
+    }
+    return;
+  }
+  flow.friend.unkind = unkind;
+  go('friendFlip');
+}
+
+renderers.friendFlip = () => {
+  const unkind = escapeHtml(flow.friend.unkind || '');
+  screen.innerHTML=`${topbar(null)}
+  <div class="pad fade">
+    <span class="step-tag">NOW — YOUR TURN 💛</span>
+    <div class="step-title">Imagine your best friend said this about themselves.</div>
+    <div class="card" style="background:#fde0e3">
+      <p style="font-size:15px;color:var(--ink)"><b>They said:</b> "${unkind}"</p>
+    </div>
+    <div class="duo" style="margin:8px auto">${buddy('',96)}</div>
+    <div class="card">
+      <p><b>What would you say to THEM?</b></p>
+      <p style="font-size:14px;margin-top:6px">You would not say "yeah, you're right." You'd say something kind and true. Type what you'd tell your friend:</p>
+    </div>
+    <textarea id="friendKind" placeholder="What would you tell your friend?" style="min-height:110px;margin-top:8px"></textarea>
+    <button class="btn" onclick="friendFinish()">Done ✓</button>
+    <button class="btn ghost" onclick="goBack()">Back</button>
+  </div>`;
+};
+
+function friendFinish(){
+  const box = $('friendKind');
+  const kind = box ? box.value.trim() : '';
+  const unkind = flow.friend.unkind || '';
+
+  // Log for therapist report
+  if(!state.friendEntries) state.friendEntries = [];
+  state.friendEntries.unshift({
+    ts: Date.now(),
+    unkind,
+    kind,
+    type: 'friend',
+  });
+  // Award 1 point + 1 bonus if she wrote a real kind response
+  const engaged = kind.length >= 3;
+  const pts = engaged ? 2 : 1;
+  state.points += pts;
+  state.totalPoints += pts;
+  save();
+
+  screen.innerHTML=`<div class="celebrate" id="celeb">
+    <div style="font-size:28px">💛 ✨ 💛</div>
+    <h2 style="color:var(--grape-deep)">${engaged ? 'Now — say that to yourself.' : 'You looked at it. That is the start.'}</h2>
+    <div class="duo" style="margin:10px 0">${buddy('happy',104)}</div>
+    ${engaged ? `<div class="card" style="background:#eaf4ec;text-align:left">
+      <p style="font-size:14px;color:var(--ink-soft);font-weight:700">You told your friend:</p>
+      <p style="font-size:15.5px;color:var(--ink);margin-top:6px">"${escapeHtml(kind)}"</p>
+      <p style="font-size:14px;color:var(--grape-deep);font-weight:700;margin-top:10px">You deserve to hear those same words. From you, to you.</p>
+    </div>` : ''}
+    <div class="big" style="font-size:14px;margin-top:10px">Being the friend you would be — to yourself — is a real skill. It takes practice.</div>
+    <div class="pointpop">+${pts} ⭐</div>
+    <button class="btn" style="max-width:260px" onclick="go('home')">Back home</button>
+    <button class="btn ghost" style="max-width:260px" onclick="go('peopleStart')">Back to People Practice</button>
+  </div>`;
+  burst();
+}
+
+/* =============================================================
+   I UPSET SOMEONE — perspective-taking + repair + apology
+============================================================= */
+
+const REPAIR_WHAT = [
+  "I said something mean or teasing",
+  "I wouldn't share or let them play",
+  "I broke or took something of theirs",
+  "I yelled or got too rough",
+  "I left them out",
+  "I told a secret or embarrassed them",
+  "I broke a promise",
+  "I ignored them",
+  "Something else",
+];
+
+const REPAIR_FEELINGS = [
+  { e:'😢', t:'Sad' },
+  { e:'💔', t:'Hurt' },
+  { e:'😳', t:'Embarrassed' },
+  { e:'😞', t:'Left out' },
+  { e:'😠', t:'Angry' },
+  { e:'😨', t:'Scared' },
+  { e:'😕', t:'Confused' },
+  { e:'💧', t:"Like I didn't care about them" },
+];
+
+const REPAIR_INTENT = [
+  { id:'accident',   e:'🌪️', t:"It was an accident",
+    response:"Accidents happen — even to kind kids. What matters now is showing you care." },
+  { id:'frustrated', e:'😤', t:"I was frustrated and it came out wrong",
+    response:"The feeling was okay — this choice hurt someone. Both can be true. You can own the choice without shaming the feeling." },
+  { id:'onpurpose',  e:'😔', t:"Yes — but I feel bad about it now",
+    response:"That takes courage to admit. Feeling bad now is what LEADS you toward making it right." },
+];
+
+renderers.repairStart = () => {
+  flow.repair = {};
+  screen.innerHTML=`${topbar('peopleStart')}
+  <div class="pad fade">
+    <span class="step-tag">I UPSET SOMEONE 🤝</span>
+    <div class="step-title">Making it right</div>
+    <div class="duo" style="margin:6px auto">${buddy('',104)}</div>
+    <div class="card">
+      <p>Everybody hurts someone's feelings sometimes — even kind kids. That doesn't make you a bad person.</p>
+      <p style="margin-top:8px">What matters is looking at it honestly, and making it right when we can.</p>
+    </div>
+    <div class="step-sub" style="margin-top:14px">What happened? What did you do?</div>
+    ${REPAIR_WHAT.map(w => `<button class="choice" onclick="repairPickWhat(${JSON.stringify(w).replace(/"/g,'&quot;')})">
+      <span class="ce">•</span>${escapeHtml(w)}</button>`).join('')}
+    <div class="step-sub" style="margin-top:10px">Or type it in your own words:</div>
+    <textarea id="repairWhatCustom" placeholder="What happened?" style="min-height:80px"></textarea>
+    <button class="btn" onclick="repairPickWhatCustom()">Use my own words ›</button>
+    <button class="btn ghost" onclick="go('peopleStart')">I'll do it in my own way</button>
+  </div>`;
+};
+
+function repairPickWhat(what){
+  flow.repair.what = what;
+  go('repairFeelings');
+}
+function repairPickWhatCustom(){
+  const box = $('repairWhatCustom');
+  const t = box ? box.value.trim() : '';
+  if(!t){
+    if(box){ box.style.borderColor = '#d8334a'; setTimeout(()=>{ box.style.borderColor=''; }, 1200); }
+    return;
+  }
+  flow.repair.what = t;
+  go('repairFeelings');
+}
+
+renderers.repairFeelings = () => {
+  if(!flow.repair) flow.repair = {};
+  if(!flow.repair.feelings) flow.repair.feelings = [];
+  const what = escapeHtml(flow.repair.what || '');
+  const chosen = flow.repair.feelings;
+  screen.innerHTML=`${topbar('repairStart')}
+  <div class="pad fade">
+    <span class="step-tag">PUT ON THEIR SHOES 👟</span>
+    <div class="step-title">How might they have felt?</div>
+    <div class="card" style="background:#fff3d6">
+      <p style="font-size:14px"><b>What happened:</b> ${what}</p>
+    </div>
+    <div class="duo" style="margin:6px auto">${buddy('',96)}</div>
+    <div class="card">
+      <p>Try to picture how the other person felt. Tap any that fit — you can pick more than one.</p>
+    </div>
+    <div class="chipwrap">
+      ${REPAIR_FEELINGS.map((f,i) => {
+        const sel = chosen.includes(f.t);
+        return `<button class="chip${sel?' sel':''}" onclick="repairToggleFeeling('${f.t.replace(/'/g,"\\'")}')">
+          <span>${f.e} ${escapeHtml(f.t)}</span></button>`;
+      }).join('')}
+    </div>
+    <div class="card tip" style="margin-top:12px">
+      <p>Not sure how they felt? That is okay — a kind next step is just asking them: "Are you okay? I'm sorry if I hurt your feelings."</p>
+    </div>
+    <button class="btn" onclick="repairNextFromFeelings()">Next ›</button>
+    <button class="btn ghost" onclick="go('peopleStart')">I'll do it in my own way</button>
+  </div>`;
+};
+
+function repairToggleFeeling(t){
+  if(!flow.repair.feelings) flow.repair.feelings = [];
+  const idx = flow.repair.feelings.indexOf(t);
+  if(idx >= 0) flow.repair.feelings.splice(idx, 1);
+  else flow.repair.feelings.push(t);
+  go('repairFeelings');
+}
+function repairNextFromFeelings(){
+  go('repairIntent');
+}
+
+renderers.repairIntent = () => {
+  screen.innerHTML=`${topbar('repairFeelings')}
+  <div class="pad fade">
+    <span class="step-tag">WAS IT ON PURPOSE?</span>
+    <div class="step-title">Being honest with yourself.</div>
+    <div class="duo" style="margin:6px auto">${buddy('',96)}</div>
+    <div class="card">
+      <p>This one is just for you — no one is judging you here. What is the honest answer?</p>
+    </div>
+    ${REPAIR_INTENT.map(i => `<button class="choice" onclick="repairPickIntent('${i.id}')">
+      <span class="ce">${i.e}</span>${escapeHtml(i.t)}</button>`).join('')}
+  </div>`;
+};
+
+function repairPickIntent(id){
+  flow.repair.intent = id;
+  const intent = REPAIR_INTENT.find(i => i.id === id);
+  screen.innerHTML=`${topbar(null)}
+  <div class="pad fade">
+    <span class="step-tag">BUBBLE HEARD YOU 💜</span>
+    <div class="duo" style="margin:8px auto">${buddy('',104)}</div>
+    <div class="card" style="background:#f5edfb">
+      <p style="font-size:15px">${escapeHtml(intent.response)}</p>
+    </div>
+    <div class="card"><p>Ready to build an apology? A real one, in three parts.</p></div>
+    <button class="btn" onclick="go('repairApology1')">Build my apology ›</button>
+    <button class="btn ghost" onclick="repairFinishNoApology()">I'll do it in my own way</button>
+  </div>`;
+};
+
+/* Apology is 3 parts, one screen each */
+renderers.repairApology1 = () => {
+  screen.innerHTML=`${topbar(null)}
+  <div class="pad fade">
+    <span class="step-tag">PART 1 of 3: SAY SORRY</span>
+    <div class="step-title">Name what you did.</div>
+    <div class="card">
+      <p>A real sorry says the actual thing — not just "sorry." It shows you understand what you did.</p>
+      <p style="font-size:14px;color:var(--ink-soft);margin-top:6px">Try to finish: <b>"I'm sorry I ______."</b></p>
+    </div>
+    <textarea id="apo1" placeholder="I'm sorry I..." style="min-height:80px">${escapeHtml((flow.repair && flow.repair.apo1)||'')}</textarea>
+    <button class="btn" onclick="repairSaveApo(1)">Next ›</button>
+    <button class="btn ghost" onclick="repairFinishNoApology()">I'll do it in my own way</button>
+  </div>`;
+};
+renderers.repairApology2 = () => {
+  screen.innerHTML=`${topbar(null)}
+  <div class="pad fade">
+    <span class="step-tag">PART 2 of 3: SHOW YOU GET IT</span>
+    <div class="step-title">Show you understand how they felt.</div>
+    <div class="card">
+      <p>Tell them what you think they felt. This is the "I see you" part — where they know you actually get it.</p>
+      <p style="font-size:14px;color:var(--ink-soft);margin-top:6px">Try to finish: <b>"I know that made you feel ______."</b></p>
+    </div>
+    <textarea id="apo2" placeholder="I know that made you feel..." style="min-height:80px">${escapeHtml((flow.repair && flow.repair.apo2)||'')}</textarea>
+    <button class="btn" onclick="repairSaveApo(2)">Next ›</button>
+    <button class="btn ghost" onclick="repairFinishNoApology()">I'll do it in my own way</button>
+  </div>`;
+};
+renderers.repairApology3 = () => {
+  screen.innerHTML=`${topbar(null)}
+  <div class="pad fade">
+    <span class="step-tag">PART 3 of 3: MAKE IT RIGHT</span>
+    <div class="step-title">Offer to make it right.</div>
+    <div class="card">
+      <p>What can you do — now or next time — to make it better?</p>
+      <p style="font-size:14px;color:var(--ink-soft);margin-top:6px">Try to finish: <b>"Next time I'll ______"</b> or <b>"Can I ______ to make it up to you?"</b></p>
+    </div>
+    <textarea id="apo3" placeholder="Next time I will... / Can I..." style="min-height:80px">${escapeHtml((flow.repair && flow.repair.apo3)||'')}</textarea>
+    <button class="btn" onclick="repairSaveApo(3)">Put it all together ›</button>
+    <button class="btn ghost" onclick="repairFinishNoApology()">I'll do it in my own way</button>
+  </div>`;
+};
+
+function repairSaveApo(n){
+  const box = $('apo'+n);
+  const t = box ? box.value.trim() : '';
+  if(!flow.repair) flow.repair = {};
+  flow.repair['apo'+n] = t;
+  if(n === 1) go('repairApology2');
+  else if(n === 2) go('repairApology3');
+  else go('repairAssemble');
+}
+
+renderers.repairAssemble = () => {
+  const p1 = flow.repair.apo1 || '';
+  const p2 = flow.repair.apo2 || '';
+  const p3 = flow.repair.apo3 || '';
+  // Auto-assemble a clean apology
+  const parts = [];
+  if(p1) parts.push("I'm sorry I " + p1.replace(/^I['\u2019]?m sorry (I )?/i, '').replace(/\.$/, ''));
+  if(p2) parts.push("I know that made you feel " + p2.replace(/^I know that made you feel /i, '').replace(/\.$/, ''));
+  if(p3){
+    // decide "Next time" or "Can I"
+    if(/^can /i.test(p3)) parts.push(p3.replace(/\?$/, ''));
+    else parts.push("Next time I'll " + p3.replace(/^Next time I['\u2019]?ll /i, '').replace(/^Next time I will /i, '').replace(/\.$/, ''));
+  }
+  const assembled = parts.join('. ') + '.';
+
+  // Log for therapist report
+  if(!state.repairEntries) state.repairEntries = [];
+  state.repairEntries.unshift({
+    ts: Date.now(),
+    what: flow.repair.what || '',
+    feelings: flow.repair.feelings || [],
+    intent: flow.repair.intent || '',
+    apology: assembled,
+    apoParts: { p1, p2, p3 },
+    type: 'repair',
+  });
+  // Award 2 points for full engagement (harder work than most)
+  state.points += 2;
+  state.totalPoints += 2;
+  save();
+
+  screen.innerHTML=`${topbar(null)}
+  <div class="pad fade">
+    <span class="step-tag">YOUR APOLOGY 🤝</span>
+    <div class="step-title">Ready to say to them.</div>
+    <div class="duo" style="margin:6px auto">${buddy('happy',104)}</div>
+    <div class="card" style="background:#eaf4ec">
+      <p style="font-size:16px;line-height:1.5;color:var(--ink);font-weight:600">"${escapeHtml(assembled)}"</p>
+    </div>
+    <div class="card tip">
+      <p><b>When you say it:</b></p>
+      <p style="margin-top:4px">• Take a slow breath first</p>
+      <p>• Look at them if you can</p>
+      <p>• Say it calm — you mean it</p>
+      <p>• They might need a minute — that is okay. Give them space.</p>
+    </div>
+    <div class="pointpop">+2 ⭐</div>
+    <button class="btn" onclick="go('home')">Back home</button>
+    <button class="btn ghost" onclick="go('peopleStart')">Back to People Practice</button>
+  </div>`;
+  burst();
+};
+
+function repairFinishNoApology(){
+  // Log the fact that she worked through the flow even without a scripted apology
+  if(!state.repairEntries) state.repairEntries = [];
+  state.repairEntries.unshift({
+    ts: Date.now(),
+    what: (flow.repair && flow.repair.what) || '',
+    feelings: (flow.repair && flow.repair.feelings) || [],
+    intent: (flow.repair && flow.repair.intent) || '',
+    apology: '(chose to do it in her own way)',
+    apoParts: {},
+    type: 'repair',
+  });
+  // Award 1 point for still working through it
+  state.points += 1;
+  state.totalPoints += 1;
+  save();
+  screen.innerHTML=`<div class="celebrate" id="celeb">
+    <div style="font-size:28px">🤝 ✨ 🤝</div>
+    <h2 style="color:var(--grape-deep)">Your way, done with care.</h2>
+    <div class="duo" style="margin:10px 0">${buddy('happy',104)}</div>
+    <div class="big" style="font-size:14.5px">You thought about it and took it seriously. Doing it your own way is fine — <b>doing it</b> is what matters.</div>
+    <div class="pointpop">+1 ⭐</div>
+    <button class="btn" style="max-width:260px" onclick="go('home')">Back home</button>
   </div>`;
   burst();
 }
@@ -2148,6 +2862,189 @@ function finishFlow(){
   save();
   go('celebrate',{pts,entry});
 }
+/* =============================================================
+   AFTER THE STORM — reflection offered after "I need help NOW"
+   A short guided look-back at what just happened. Optional.
+============================================================= */
+
+const STORM_TRIGGERS = [
+  'Someone said something mean',
+  'I was told no',
+  'I had to stop something fun',
+  'Someone was unfair',
+  'I made a mistake',
+  'I was tired or hungry',
+  'A friend problem',
+  'Sibling stuff',
+  'Homework or school',
+  'Something got broken or lost',
+  'I don\'t know',
+  'Something else',
+];
+const STORM_WHERE = [
+  '🏠 Home', '🛏️ My room', '🏫 School', '🚗 In the car',
+  '🏡 A friend\'s house', '🌳 Outside', '⚽ At an activity',
+  '⛪ At church', '🛒 A store', '✨ Somewhere else',
+];
+const STORM_WHO = [
+  '💗 Mom', '💙 Dad', '🧒 Emily', '🎒 A school friend',
+  '🏘️ A neighborhood friend', '👯 A group', '👪 Family',
+  '🍎 A teacher', '📣 A coach', '🙂 Just me',
+];
+const STORM_CONTROLLED = [
+  'I tried a tool',
+  'I asked for help',
+  'I used my words',
+  'I walked away',
+  'I told the truth',
+  'I stopped before it got worse',
+  'I came back here',
+  'I let a grown-up know',
+];
+
+renderers.afterStormStart = () => {
+  flow.storm = { step:0 };
+  go('afterStormWhere');
+};
+
+renderers.afterStormWhere = () => {
+  screen.innerHTML=`${topbar(null)}
+  <div class="pad fade">
+    <span class="step-tag">AFTER THE STORM 🌈</span>
+    <div style="font-weight:800;color:var(--orchid);font-size:13px;margin-top:8px">Step 1 of 5</div>
+    <div class="bar" style="margin-bottom:8px"><i style="width:0%"></i></div>
+    <div class="step-title">Where were you?</div>
+    <div class="duo" style="margin:6px auto">${buddy('',96)}</div>
+    <div class="chipwrap">
+      ${STORM_WHERE.map(w => `<button class="chip" onclick="stormPickWhere(${JSON.stringify(w).replace(/"/g,'&quot;')})">
+        <span>${escapeHtml(w)}</span></button>`).join('')}
+    </div>
+    <button class="btn ghost" onclick="stormSkip()">Skip and go home</button>
+  </div>`;
+};
+function stormPickWhere(w){ flow.storm.where = w; go('afterStormWho'); }
+
+renderers.afterStormWho = () => {
+  screen.innerHTML=`${topbar(null)}
+  <div class="pad fade">
+    <span class="step-tag">AFTER THE STORM 🌈</span>
+    <div style="font-weight:800;color:var(--orchid);font-size:13px;margin-top:8px">Step 2 of 5</div>
+    <div class="bar" style="margin-bottom:8px"><i style="width:20%"></i></div>
+    <div class="step-title">Who was with you?</div>
+    <div class="chipwrap">
+      ${STORM_WHO.map(w => `<button class="chip" onclick="stormPickWho(${JSON.stringify(w).replace(/"/g,'&quot;')})">
+        <span>${escapeHtml(w)}</span></button>`).join('')}
+    </div>
+    <button class="btn ghost" onclick="stormSkip()">Skip and go home</button>
+  </div>`;
+};
+function stormPickWho(w){ flow.storm.who = w; go('afterStormTrigger'); }
+
+renderers.afterStormTrigger = () => {
+  screen.innerHTML=`${topbar(null)}
+  <div class="pad fade">
+    <span class="step-tag">AFTER THE STORM 🌈</span>
+    <div style="font-weight:800;color:var(--orchid);font-size:13px;margin-top:8px">Step 3 of 5</div>
+    <div class="bar" style="margin-bottom:8px"><i style="width:40%"></i></div>
+    <div class="step-title">What set it off?</div>
+    <div class="step-sub">The little thing that started the big feeling.</div>
+    ${STORM_TRIGGERS.map(t => `<button class="choice" onclick="stormPickTrigger(${JSON.stringify(t).replace(/"/g,'&quot;')})">
+      <span class="ce">•</span>${escapeHtml(t)}</button>`).join('')}
+    <button class="btn ghost" onclick="stormSkip()">Skip and go home</button>
+  </div>`;
+};
+function stormPickTrigger(t){ flow.storm.trigger = t; go('afterStormDoOver'); }
+
+renderers.afterStormDoOver = () => {
+  screen.innerHTML=`${topbar(null)}
+  <div class="pad fade">
+    <span class="step-tag">THE DO-OVER 🔄</span>
+    <div style="font-weight:800;color:var(--orchid);font-size:13px;margin-top:8px">Step 4 of 5</div>
+    <div class="bar" style="margin-bottom:8px"><i style="width:60%"></i></div>
+    <div class="step-title">If you could rewind...</div>
+    <div class="duo" style="margin:6px auto">${buddy('',96)}</div>
+    <div class="card">
+      <p>Not because you did wrong — but because thinking about it now, when things are calm, helps for next time.</p>
+      <p style="margin-top:6px"><b>What might you do differently next time?</b></p>
+    </div>
+    <textarea id="stormDoover" placeholder="Next time I might..." style="min-height:90px"></textarea>
+    <button class="btn" onclick="stormNextDoOver()">Next ›</button>
+    <button class="btn ghost" onclick="stormSkip()">Skip and go home</button>
+  </div>`;
+};
+function stormNextDoOver(){
+  const box = $('stormDoover');
+  flow.storm.doover = box ? box.value.trim() : '';
+  go('afterStormControlled');
+}
+
+renderers.afterStormControlled = () => {
+  if(!flow.storm.controlled) flow.storm.controlled = [];
+  const chosen = flow.storm.controlled;
+  screen.innerHTML=`${topbar(null)}
+  <div class="pad fade">
+    <span class="step-tag">WHAT YOU CONTROLLED 💪</span>
+    <div style="font-weight:800;color:var(--orchid);font-size:13px;margin-top:8px">Step 5 of 5</div>
+    <div class="bar" style="margin-bottom:8px"><i style="width:80%"></i></div>
+    <div class="step-title">Even in the storm, you did some things right.</div>
+    <div class="duo" style="margin:6px auto">${buddy('',96)}</div>
+    <div class="card">
+      <p>Tap any of these that you actually did — even a little. This is about noticing what YOU can be proud of.</p>
+    </div>
+    <div class="chipwrap">
+      ${STORM_CONTROLLED.map(c => {
+        const sel = chosen.includes(c);
+        return `<button class="chip${sel?' sel':''}" onclick="stormToggleControlled(${JSON.stringify(c).replace(/"/g,'&quot;')})">
+          <span>${escapeHtml(c)}</span></button>`;
+      }).join('')}
+    </div>
+    <button class="btn" onclick="stormFinish()">Done reflecting ✅</button>
+    <button class="btn ghost" onclick="stormSkip()">Skip and go home</button>
+  </div>`;
+};
+function stormToggleControlled(c){
+  if(!flow.storm.controlled) flow.storm.controlled = [];
+  const idx = flow.storm.controlled.indexOf(c);
+  if(idx>=0) flow.storm.controlled.splice(idx,1);
+  else flow.storm.controlled.push(c);
+  go('afterStormControlled');
+}
+
+function stormSkip(){
+  // Just go home — nothing saved
+  go('home');
+}
+
+function stormFinish(){
+  if(!state.afterStormEntries) state.afterStormEntries = [];
+  state.afterStormEntries.unshift({
+    ts: Date.now(),
+    where: flow.storm.where || '',
+    who: flow.storm.who || '',
+    trigger: flow.storm.trigger || '',
+    doover: flow.storm.doover || '',
+    controlled: flow.storm.controlled || [],
+    type: 'afterstorm',
+  });
+  // Award 2 points for the reflection work
+  state.points += 2;
+  state.totalPoints += 2;
+  save();
+  screen.innerHTML=`<div class="celebrate" id="celeb">
+    <div style="font-size:28px">🌈 ✨ 🌈</div>
+    <h2 style="color:var(--grape-deep)">You looked back bravely.</h2>
+    <div class="duo" style="margin:10px 0">${buddy('happy',104)}</div>
+    <div class="big" style="font-size:14.5px">Looking at hard moments — after they're over — is how we get stronger.</div>
+    ${(flow.storm.controlled && flow.storm.controlled.length) ? `<div class="card" style="background:#eaf4ec;margin-top:12px">
+      <p style="font-size:13.5px;color:var(--ink)"><b>You said you:</b> ${flow.storm.controlled.map(c=>escapeHtml(c)).join(', ')}</p>
+      <p style="font-size:13px;color:var(--grape-deep);font-weight:700;margin-top:4px">That's real. That's yours to keep.</p>
+    </div>` : ''}
+    <div class="pointpop">+2 ⭐</div>
+    <button class="btn" style="max-width:260px" onclick="go('home')">Back home</button>
+  </div>`;
+  burst();
+}
+
 renderers.celebrate = (d) => {
   const e=d.entry;
   const hasPair=e.rateBefore!=null && e.rateAfter!=null;
@@ -2182,6 +3079,13 @@ renderers.celebrate = (d) => {
       :`<div class="big" style="font-size:15px">${escapeHtml(specific)}</div>`}
     <div class="pointpop">+${d.pts} ⭐</div>
     <div class="big" style="margin-top:10px;font-size:13px">${escapeHtml(state.monsterName)} got smaller — you and Bubble are helping it calm down!</div>
+    ${e.door === 'during' ? `
+      <div class="card" style="margin-top:16px;background:#e0f0ff;text-align:left">
+        <h3 style="margin:0;color:var(--grape-deep);text-align:center">🌈 After the Storm</h3>
+        <p style="text-align:center;margin:6px 0 10px;font-size:14px">Now that things are calmer — want to look back at what happened?</p>
+        <button class="btn" style="margin:0" onclick="go('afterStormStart')">Reflect together 🌈</button>
+      </div>
+    ` : ''}
     ${calm ? `
       <div class="card" style="margin-top:16px;background:#eaf4ec;text-align:left">
         <h3 style="margin:0;color:var(--grape-deep);text-align:center">You are in a good place 🌟</h3>
@@ -2627,6 +3531,63 @@ const DISTRACT_JOKES = [
 ];
 
 /* --- Distract Me: sub-tool picker --- */
+/* =============================================================
+   5-4-3-2-1 GROUNDING — step-by-step sensory grounding
+   Bring the body back to right-here-right-now, one sense at a time.
+============================================================= */
+const GROUNDING_STEPS = [
+  { n:5, sense:'see',   emoji:'👀', prompt:'Name 5 things you can SEE',
+    hint:'Look around slowly. Big things, tiny things — anything counts.' },
+  { n:4, sense:'hear',  emoji:'👂', prompt:'Name 4 things you can HEAR',
+    hint:'Get quiet. Even a small sound counts — a hum, your own breathing.' },
+  { n:3, sense:'touch', emoji:'✋', prompt:'Name 3 things you can TOUCH',
+    hint:'Feel your clothes, the floor, a nearby thing. What does it feel like?' },
+  { n:2, sense:'smell', emoji:'👃', prompt:'Name 2 things you can SMELL',
+    hint:'Take a slow sniff. Nothing to smell? Imagine 2 smells you love.' },
+  { n:1, sense:'taste', emoji:'👅', prompt:'Name 1 thing you can TASTE',
+    hint:'What is in your mouth right now? Or imagine 1 taste you love.' },
+];
+
+renderers.grounding = () => {
+  // Reset session on entry
+  flow.groundingStep = 0;
+  groundingStepScreen();
+};
+
+function groundingStepScreen(){
+  const step = GROUNDING_STEPS[flow.groundingStep];
+  if(!step){ groundingDone(); return; }
+  const progress = (flow.groundingStep / GROUNDING_STEPS.length) * 100;
+  screen.innerHTML=`${topbar(null)}
+  <div class="pad fade" style="text-align:center">
+    <span class="step-tag">GROUNDING ${step.emoji}</span>
+    <div class="bar" style="margin:8px 0 6px"><i style="width:${progress}%"></i></div>
+    <div style="font-weight:800;color:var(--orchid);font-size:13px">Step ${flow.groundingStep+1} of 5</div>
+    <div class="step-title" style="margin-top:10px">${escapeHtml(step.prompt)}</div>
+    <div class="duo" style="margin:8px auto">${buddy('',96)}</div>
+    <div class="card"><p>${escapeHtml(step.hint)}</p></div>
+    <div style="font-family:'Baloo 2',cursive;font-size:56px;color:var(--grape-deep);margin:16px 0;line-height:1">${step.n}</div>
+    <button class="btn" onclick="groundingNext()">I did it ✓</button>
+    <button class="btn ghost" onclick="groundingNext()">Skip this step</button>
+  </div>`;
+}
+function groundingNext(){
+  flow.groundingStep++;
+  if(flow.groundingStep >= GROUNDING_STEPS.length){ groundingDone(); return; }
+  groundingStepScreen();
+}
+function groundingDone(){
+  // Award 1 point for using the tool (matches other coping tools)
+  screen.innerHTML=`<div class="celebrate" id="celeb">
+    <div style="font-size:28px">👋 🌟 👋</div>
+    <h2>You brought yourself back.</h2>
+    <div class="duo" style="margin:10px 0">${buddy('happy',104)}</div>
+    <div class="big" style="font-size:15px">Grounding is a real skill — it brings your body and mind together into right now.</div>
+    <button class="btn" style="max-width:260px" onclick="afterTool()">Continue</button>
+  </div>`;
+  burst();
+}
+
 renderers.distract = () => {
   // Award the session point once per fresh entry from outside Distract Me.
   // Coming from any distract sub-tool keeps the flag (don't double-award).
@@ -2649,7 +3610,8 @@ renderers.distract = () => {
     <button class="choice" onclick="go('distractIdeas')"><span class="ce">🎲</span>Something to do right now</button>
     <button class="choice" onclick="go('distractJokes')"><span class="ce">😂</span>Tell me a joke</button>
     <button class="choice" onclick="go('distractBubbles')"><span class="ce">🫧</span>Pop bubbles</button>
-    <button class="choice" onclick="go('distractMath')"><span class="ce">✖️</span>Math game</button>
+    <button class="choice" onclick="go('distractMath')"><span class="ce">✖️</span>Math game (type answer)</button>
+    <button class="choice" onclick="go('distractMathBubbles')"><span class="ce">🫧</span>Math bubble pop!</button>
     <button class="btn ghost" style="margin-top:12px" onclick="afterTool()">Done — back to coping</button>
   </div>`;
 };
@@ -2843,6 +3805,160 @@ function stopBubbleAnimation(){
 
 function distractStopBubbles(){
   stopBubbleAnimation();
+  go('distract');
+}
+
+/* =============================================================
+   MATH BUBBLE POP — multiplication answers float up in bubbles;
+   tap the correct one. Wrong bubbles just float off harmlessly.
+============================================================= */
+let mathBubbleIntervalSpawn = null;
+let mathBubbleIntervalAnim = null;
+let mathBubbleList = [];
+
+renderers.distractMathBubbles = () => {
+  // fresh problem on entry (or if last one just got answered)
+  if(!flow.mathBubProb){
+    newMathBubbleProblem();
+  }
+  if(typeof flow.mathBubScore !== 'number') flow.mathBubScore = 0;
+  const { a, b } = flow.mathBubProb;
+  screen.innerHTML=`${topbar('distract')}
+  <div class="pad fade">
+    <span class="step-tag">MATH BUBBLE POP 🫧</span>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:6px">
+      <div style="font-weight:800;color:var(--orchid);font-size:14px">Score: <span id="mathBubScore">${flow.mathBubScore}</span></div>
+      <button class="btn ghost" style="width:auto;margin:0;padding:8px 14px" onclick="distractStopMathBubbles()">Done</button>
+    </div>
+    <div class="card" style="text-align:center;margin-top:10px;background:#eaf4ec">
+      <p style="font-size:28px;color:var(--ink);font-weight:800;font-family:'Baloo 2',cursive;margin:6px 0" id="mathBubProblem">${a} × ${b} = ?</p>
+    </div>
+    <div id="mathBubStage" style="position:relative;width:100%;height:400px;background:linear-gradient(180deg,#f5edfb 0%,#e8d6f4 100%);border-radius:18px;margin-top:10px;overflow:hidden;cursor:pointer;touch-action:manipulation"></div>
+    <div class="card tip" style="margin-top:10px"><p>Pop the bubble with the right answer! 🫧</p></div>
+  </div>`;
+  startMathBubbleAnimation();
+};
+
+function newMathBubbleProblem(){
+  const a = 2 + Math.floor(Math.random()*11);  // 2-12
+  const b = 2 + Math.floor(Math.random()*11);
+  flow.mathBubProb = { a, b, ans: a*b };
+}
+
+function startMathBubbleAnimation(){
+  stopMathBubbleAnimation();
+  mathBubbleList = [];
+  const stage = $('mathBubStage');
+  if(!stage) return;
+  // spawn a new bubble every ~900ms (a bit slower than plain bubbles so kid can read)
+  mathBubbleIntervalSpawn = setInterval(() => {
+    spawnMathBubble();
+  }, 900);
+  // spawn 2 initial bubbles — at least one always correct
+  spawnMathBubble(true); spawnMathBubble();
+  mathBubbleIntervalAnim = setInterval(() => {
+    animateMathBubbles();
+  }, 33);
+}
+
+function spawnMathBubble(forceCorrect){
+  const stage = $('mathBubStage');
+  if(!stage || !flow.mathBubProb) return;
+  const stageW = stage.clientWidth;
+  const stageH = stage.clientHeight;
+  if(!stageW || !stageH) return;
+  // Decide if this bubble is the correct answer.
+  // ~1 in 4 bubbles is correct — or forced correct.
+  const isCorrect = forceCorrect || (Math.random() < 0.28);
+  const ans = flow.mathBubProb.ans;
+  let value;
+  if(isCorrect){
+    value = ans;
+  } else {
+    // wrong answer: nearby-ish number so it feels plausible
+    const delta = (Math.floor(Math.random()*20) + 1) * (Math.random()<0.5 ? -1 : 1);
+    value = Math.max(2, ans + delta);
+    if(value === ans) value = ans + 3;  // never accidentally correct
+  }
+  const size = 62;
+  const x = Math.floor(Math.random() * (stageW - size));
+  const y = stageH + size;
+  const speed = 0.5 + Math.random()*0.7;
+  const wobble = 0.4 + Math.random()*0.5;
+  const wobblePhase = Math.random()*Math.PI*2;
+
+  const el = document.createElement('button');
+  el.className = 'math-bubble-float';
+  el.style.cssText = `position:absolute;left:${x}px;top:${y}px;width:${size}px;height:${size}px;border-radius:50%;border:none;padding:0;cursor:pointer;background:radial-gradient(circle at 30% 30%,rgba(255,255,255,0.9),rgba(173,138,219,0.6) 60%,rgba(125,82,178,0.45));box-shadow:inset -4px -6px 8px rgba(125,82,178,0.3),0 2px 8px rgba(125,82,178,0.25);touch-action:manipulation;font-family:'Baloo 2',cursive;font-weight:800;font-size:19px;color:var(--grape-deep);display:flex;align-items:center;justify-content:center`;
+  el.textContent = value;
+  el.setAttribute('aria-label', 'answer bubble '+value);
+  el.dataset.correct = isCorrect ? '1' : '0';
+  el.onclick = (e) => { e.stopPropagation(); popMathBubble(el, isCorrect); };
+  stage.appendChild(el);
+
+  mathBubbleList.push({ el, x, y, size, speed, wobble, wobblePhase, baseX:x, t:0 });
+}
+
+function animateMathBubbles(){
+  const stage = $('mathBubStage');
+  if(!stage) return;
+  mathBubbleList = mathBubbleList.filter(b => {
+    b.t += 1;
+    b.y -= b.speed;
+    const wob = Math.sin((b.t * 0.05) + b.wobblePhase) * (b.wobble * 12);
+    b.x = b.baseX + wob;
+    b.el.style.top = b.y + 'px';
+    b.el.style.left = b.x + 'px';
+    if(b.y + b.size < 0){
+      try { b.el.remove(); } catch(e){}
+      return false;
+    }
+    return true;
+  });
+}
+
+function popMathBubble(el, isCorrect){
+  // Different feedback for correct vs wrong tap
+  if(isCorrect){
+    // celebratory pop
+    el.style.transition = 'transform 0.25s ease-out, opacity 0.25s ease-out, background 0.25s';
+    el.style.transform = 'scale(1.9)';
+    el.style.opacity = '0';
+    el.style.background = 'radial-gradient(circle,#7fe0b5,#3fd6a8)';
+    el.onclick = null;
+    setTimeout(() => { try{ el.remove(); } catch(e){} }, 260);
+    mathBubbleList = mathBubbleList.filter(b => b.el !== el);
+    flow.mathBubScore = (flow.mathBubScore||0) + 1;
+    const scoreEl = $('mathBubScore');
+    if(scoreEl) scoreEl.textContent = flow.mathBubScore;
+    // Fresh problem
+    newMathBubbleProblem();
+    const probEl = $('mathBubProblem');
+    if(probEl) probEl.textContent = flow.mathBubProb.a + ' × ' + flow.mathBubProb.b + ' = ?';
+    // Guarantee one correct-answer bubble is on the way for the new problem
+    setTimeout(() => spawnMathBubble(true), 400);
+  } else {
+    // gentle nope — brief red flash + shake, no score penalty
+    el.style.transition = 'transform 0.15s';
+    el.style.background = 'radial-gradient(circle,#ffb4c0,#f47b8f)';
+    el.style.transform = 'translateX(-6px)';
+    setTimeout(() => { el.style.transform = 'translateX(6px)'; }, 80);
+    setTimeout(() => {
+      el.style.transform = '';
+      el.style.background = 'radial-gradient(circle at 30% 30%,rgba(255,255,255,0.9),rgba(173,138,219,0.6) 60%,rgba(125,82,178,0.45))';
+    }, 200);
+  }
+}
+
+function stopMathBubbleAnimation(){
+  if(mathBubbleIntervalSpawn){ clearInterval(mathBubbleIntervalSpawn); mathBubbleIntervalSpawn = null; }
+  if(mathBubbleIntervalAnim){ clearInterval(mathBubbleIntervalAnim); mathBubbleIntervalAnim = null; }
+  mathBubbleList = [];
+}
+
+function distractStopMathBubbles(){
+  stopMathBubbleAnimation();
+  flow.mathBubProb = null;   // fresh problem next time she enters
   go('distract');
 }
 
@@ -3188,6 +4304,17 @@ renderers.parentHome = () => {
       <button class="btn ghost" style="margin-top:8px" onclick="renameMonster()">Save name</button>
     </div>
 
+    <div class="card"><h3>🔔 Reminders</h3>
+      <p>Adelyn can tap the 🔕/🔔 bell on her home screen to opt this device into reminders. The schedule is every 2 hours, 9 AM–9 PM (Eastern), every day. If she used the app within the last hour, that hour's reminder is skipped.</p>
+      <p style="font-size:13px;color:var(--ink-soft);font-weight:600">To verify reminders are working, tap the test button below — it sends a notification right now to all subscribed devices.</p>
+      <button class="btn ghost" style="margin-top:8px" onclick="sendTestReminder()">Send test notification 🔔</button>
+      <div id="testResult" style="margin-top:8px;font-size:13px;font-weight:700"></div>
+    </div>
+
+    <div class="card"><h3>About / Legal</h3>
+      <button class="btn ghost" onclick="go('aboutLegal')">View About &amp; Legal info</button>
+    </div>
+
     <div class="card tip"><h3>Settings</h3>
       <button class="btn ghost" onclick="go('changePin')">Change PIN</button>
       <button class="btn ghost" onclick="confirmReset()" style="color:#d8334a">Erase all data</button>
@@ -3385,6 +4512,39 @@ function deleteReward(id){
   save();
   go('parentHome');
 }
+/* ---------- About / Legal page (Parent Zone) ---------- */
+renderers.aboutLegal = () => {
+  screen.innerHTML=`${topbar('parentHome')}
+  <div class="pad fade">
+    <span class="step-tag">ABOUT &amp; LEGAL</span>
+    <div class="step-title">About Bubble</div>
+    <div class="card">
+      <p>Bubble is part of the Brave Battle platform, provided by Brave Kids United, Inc., an Indiana nonprofit corporation. It is designed to help kids practice emotional regulation skills and track their growth — particularly around anger, frustration, and big feelings.</p>
+    </div>
+
+    <div class="step-title" style="margin-top:18px">Important — Not a Substitute for Care</div>
+    <div class="card">
+      <p>Bubble is a support tool, not a replacement for professional care. It does not diagnose, treat, or cure any medical or psychological condition.</p>
+      <p style="margin-top:8px">This app is not designed for use in crisis situations or for conditions requiring professional treatment, including trauma, eating disorders, severe depression, suicidal thoughts, self-harm, psychosis, or substance abuse. For any of these, please contact a licensed professional immediately.</p>
+      <p style="margin-top:8px">Brave Kids United, Inc. and the Bubble team are not licensed mental health professionals. Content within Bubble does not constitute medical, psychological, or therapeutic advice.</p>
+      <p style="margin-top:8px"><b>In a crisis, call or text 988 or call 911.</b></p>
+    </div>
+
+    <div class="step-title" style="margin-top:18px">Your Data</div>
+    <div class="card">
+      <p>All data in Bubble is stored on the family's devices and synced privately through secure cloud storage managed by Brave Kids United, Inc. We do not sell, share, or use your data for advertising. We do not share data with third parties. Data can be exported or permanently deleted at any time from the Parent Zone.</p>
+    </div>
+
+    <div class="step-title" style="margin-top:18px">Legal</div>
+    <div class="card">
+      <p>© 2026 Brave Kids United, Inc. All rights reserved.</p>
+      <p style="margin-top:6px">Brave Battle™ is a trademark of Brave Kids United, Inc.</p>
+      <p style="margin-top:6px">Brave Kids United, Inc. is a nonprofit corporation registered in the State of Indiana.</p>
+    </div>
+    <button class="btn" onclick="go('parentHome')">Back to Grown-Ups</button>
+  </div>`;
+};
+
 renderers.changePin = () => {
   screen.innerHTML=`${topbar('parentHome')}
   <div class="pad fade"><span class="step-tag">CHANGE PIN 🔑</span>
